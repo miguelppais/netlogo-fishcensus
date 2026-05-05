@@ -313,7 +313,7 @@ set persons (turtle-set divers buddies) ; creates the agentset containing divers
 
 ask divers [
  set finished? false                                            ; reset the "finished?" variable
- set memory []                                                  ; reset the memory list
+ set memory no-turtles                                          ; reset the memory list
 ]
 
 output-print "Setup complete. Press GO to run the model"
@@ -359,6 +359,10 @@ to go
   ]
 
 
+
+  ask fishes [
+    if schooling? [set schoolmates other fishes in-cone perception.dist perception.angle with [species = [species] of myself]]
+  ]
 
   repeat movement.time.step [
 
@@ -452,7 +456,6 @@ end ; of do.outputs
 ;fish movement submodel
 
 to do.fish.movement
-  if schooling? [set schoolmates other fishes in-cone perception.dist perception.angle with [species = [species] of myself]]    ; if schooling is true,look for conspecifics in my vicinity
 
   set acceleration (list 0 0)                                                                                                   ; acceleration at each step is determined entirely by the urges
 
@@ -759,16 +762,16 @@ to d.count.fishes                      ; for fixed distance transects, there is 
   let eligible.fishes seen.fishes with [(xcor > myxcor - (distance.transect.width / 2)) and (xcor < myxcor + (distance.transect.width / 2)) and (ycor < my.final.ycor)]  ; distance transects have a limit in ycor as well
   let identifiable.fishes eligible.fishes with [id.distance >= distance myself and visible?]      ; only fish that within their id.distance and are visible are counted
   let diver.memory memory
-  let new.fishes (identifiable.fishes with [not member? who diver.memory]) ; only fishes that are not remembered are counted
+  let new.fishes (identifiable.fishes with [not member? self diver.memory]) ; only fishes that are not remembered are counted
   ifelse count new.fishes > count.saturation [                       ; even if there are more, only the max number of fishes per second is counted (count.saturation)
     let new.records ([species] of min-n-of count.saturation new.fishes [distance myself]) ; priority is given to closest fishes
     set counted.fishes sentence counted.fishes new.records
-    set memory sentence memory [who] of new.fishes
+    set memory (turtle-set memory new.fishes)
   ] [
   if any? new.fishes [                                      ; if there are new fishes, but they do not exceed count.saturation, just count them
     let new.records ([species] of new.fishes)
     set counted.fishes sentence counted.fishes new.records
-    set memory sentence memory [who] of new.fishes
+    set memory (turtle-set memory new.fishes)
   ]]
 end
 
@@ -778,16 +781,16 @@ to t.count.fishes
   let eligible.fishes seen.fishes with [(xcor >= myxcor - (timed.transect.width / 2)) and (xcor <= myxcor + (timed.transect.width / 2))]  ; this only works for transects heading north, of course
   let identifiable.fishes eligible.fishes with [id.distance >= distance myself and visible?]
   let diver.memory memory
-  let new.fishes identifiable.fishes with [not member? who diver.memory] ; only fishes that are not remembered are counted
+  let new.fishes identifiable.fishes with [not member? self diver.memory] ; only fishes that are not remembered are counted
   ifelse count new.fishes > count.saturation [                       ; even if there are more, only the max number of fishes per second is counted (count.saturation)
     let new.records ([species] of min-n-of count.saturation new.fishes [distance myself]) ; priority is given to closest fishes
     set counted.fishes sentence counted.fishes new.records
-    set memory sentence memory [who] of new.fishes
+    set memory (turtle-set memory new.fishes)
   ] [
   if any? new.fishes [                                      ; if there are new fishes, but they do not exceed count.saturation, just count them
     let new.records ([species] of new.fishes)
     set counted.fishes sentence counted.fishes new.records
-    set memory sentence memory [who] of new.fishes
+    set memory (turtle-set memory new.fishes)
   ]]
 end
 
@@ -795,16 +798,16 @@ to s.count.fishes
   let eligible.fishes fishes in-cone stationary.radius viewangle
   let identifiable.fishes eligible.fishes with [id.distance >= distance myself and visible?]
   let diver.memory memory
-  let new.fishes identifiable.fishes with [not member? who diver.memory] ; only fishes that are not remembered are counted
+  let new.fishes identifiable.fishes with [not member? self diver.memory] ; only fishes that are not remembered are counted
   ifelse count new.fishes > count.saturation [                       ; even if there are more, only the max number of fishes per second is counted (count.saturation)
     let new.records ([species] of min-n-of count.saturation new.fishes [distance myself]) ; priority is given to closest fishes
     set counted.fishes sentence counted.fishes new.records
-    set memory sentence memory [who] of new.fishes
+    set memory (turtle-set memory new.fishes)
   ] [
   if any? new.fishes [                                      ; if there are new fishes, but they do not exceed count.saturation, just count them
     let new.records ([species] of new.fishes)
     set counted.fishes sentence counted.fishes new.records
-    set memory sentence memory [who] of new.fishes
+    set memory (turtle-set memory new.fishes)
   ]]
 end
 
@@ -812,25 +815,25 @@ to r.count.fishes
   let eligible.fishes fishes in-cone max.visibility viewangle
   let identifiable.fishes eligible.fishes with [id.distance >= distance myself and visible?]
   let diver.memory memory
-  let new.fishes identifiable.fishes with [not member? who diver.memory] ; only fishes that were not previously counted are counted
+  let new.fishes identifiable.fishes with [not member? self diver.memory] ; only fishes that were not previously counted are counted
   ifelse count new.fishes > count.saturation [                       ; even if there are more, only the max number of fishes per second is counted (count.saturation)
     let new.records ([species] of min-n-of count.saturation new.fishes [distance myself]) ; priority is given to closest fishes
     set counted.fishes sentence counted.fishes new.records
-    set memory sentence memory [who] of new.fishes
+    set memory (turtle-set memory new.fishes)
   ] [
   if any? new.fishes [                                      ; if there are new fishes, but they do not exceed count.saturation, just count them
     let new.records ([species] of new.fishes)
     set counted.fishes sentence counted.fishes new.records
-    set memory sentence memory [who] of new.fishes
+    set memory (turtle-set memory new.fishes)
   ]]
 end
 
 ;forget fishes
 
 to forget.fishes                                                        ; runs if super memory is off
-  let seen.fish.id [who] of fishes in-cone max.visibility viewangle
+  let seen.fishes fishes in-cone max.visibility viewangle
   let diver.memory memory
-  set memory filter [[id] -> member? id seen.fish.id] diver.memory
+  set memory diver.memory with [member? self seen.fishes]
 end
 
 
@@ -846,8 +849,7 @@ to-report random-float-between [a b]           ; generate a random float between
 end
 
 to-report occurrences [x the-list]             ; count the number of occurrences of an item in a list (useful for summarizing species lists)
-  report reduce
-    [[occurrence-count next-item] -> ifelse-value (next-item = x) [occurrence-count + 1] [occurrence-count]] (fput 0 the-list)
+  report length filter [ [i] -> i = x ] the-list
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
