@@ -1,0 +1,1761 @@
+<?xml version="1.0" encoding="utf-8"?>
+<model version="NetLogo 7.0.3" snapToGrid="true">
+  <code><![CDATA[extensions [
+  csv ; read and write species data files
+  vid ; for model calibration: record videos of species behaviour to compare with real videos of the intended behaviours
+]
+
+breed [ fishes fish ]
+breed [ predators predator ]
+breed [ divers diver ]
+
+globals [sp.param b1.sp.param b2.sp.param b3.sp.param b4.sp.param loaded.behavior wat.dens.value schoolmate-counts recording _recording-save-file-name]
+
+predators-own [
+ satiety             ; when >0, the predator does not seek prey. Decreases from 100 with time.
+]
+
+fishes-own [
+  schoolmates        ; agentset of nearby fishes
+  velocity           ; vector with x and y components determined by the previous velocity and the current acceleration at each step
+  acceleration       ; vector with x and y components, determined by the sum of all urges
+  picked.patch
+  drag.formula
+  visible?
+]
+
+patches-own [
+
+]
+
+
+;; Setup Procedures
+
+to startup
+  create-new-species
+end
+
+to estimate-speeds   ; from caudal fin aspect ratio and fish size, acording to Sambilay, Jr. (1990)
+let size.cm fish.size * 100
+let rel.speed 10 ^ ((0.616 - (0.3804 * log size.cm 10)) + (0.3478 * (log aspect.ratio 10)))
+let rel.burst 10 ^ ((0.616 - (0.3804 * log size.cm 10)) + (0.3478 * (log aspect.ratio 10)) + 0.7621)
+set max.sustained.speed precision (fish.size * rel.speed) 1
+set burst.speed precision (fish.size * rel.burst) 1
+end
+
+to setup
+  output-print "Clearing display and resetting time..."
+  clear-ticks                                          ; clear everything except global variables
+  clear-turtles
+  clear-patches
+  clear-drawing
+  clear-all-plots
+  stop-inspecting-dead-agents                         ; close diver detail windows
+  set recording false
+  output-print "Painting floor tiles"
+  ask patches with [pycor mod 2 = 0 and pxcor mod 2 = 0] [set pcolor 103]
+  ask patches with [pycor mod 2 = 1 and pxcor mod 2 = 1] [set pcolor 103]
+  ask patches with [pcolor = black] [set pcolor 105]
+  ifelse water-density = "Seawater - 1027 Kg/m3" [set wat.dens.value 1027] [set wat.dens.value 1000]
+  output-print "Placing fishes..."
+  create-fishes (fish.density * (world-width * world-height))
+    [
+      setxy random-xcor random-ycor
+      set size fish.size
+      set shape "fish top"
+      set velocity [ 0 0 ]
+      set acceleration [ 0 0 ]
+      set color fish.color
+      set drag.formula ((0.5 * drag-coefficient * wat.dens.value * ((length-surface * ((size * 100) ^ 2)) * 0.0001))/((lw-a * ((size * 100) ^ lw-b)) * 0.001))   ; formula to calculate k in order to calculate the deceleration due to drag in the form of a = kv^2 (v for velocity). length-surface area and length-weigth relationships are converted here from g and cm to Kg and m.
+      set schoolmates no-turtles                                  ;sets schoolmates as an empty agentset (otherwise it would be set to 0)
+      set picked.patch false
+      if detectability < 1 [
+       set visible? random-bernoulli detectability                                 ; determine the visibility of fishes if detectability < 1
+       ifelse visible? [set color fish.color] [set color fish.color - 3]           ; make fishes appear darker when hidden
+       ]
+      ]
+  reset-ticks
+end
+
+;;
+;; Runtime Procedures
+;;
+to go
+  repeat movement.time.step [                             ; variable movement.time.step in the interface should match the frame rate in settings
+
+    ask fishes [
+      do.fish.movement
+    ]
+    ask predators [                                    ; simple movement algorithm for predators
+      ifelse satiety < 1 [
+        set heading heading + random-float-between -10 10
+        fd 0.1 * predator.normal.speed
+        let prey fishes in-cone predator.vision.distance predator.vision.angle
+        if any? prey [
+        turn-at-most (subtract-headings towards one-of prey heading) predator.max.turn
+        fd 0.1 * predator.burst.speed
+        if any? prey in-cone 0.1 30 [ask one-of prey in-cone 0.1 30 [
+        ask myself [set satiety 100] die]
+      ]]]
+      [set heading heading + random-float-between -5 5
+        fd 0.1 * 0.5 * predator.normal.speed]
+    ]
+  ask divers [fd 8 / (60 * movement.time.step)]
+  if smooth.animation?  [display]
+  if recording [vid:record-view]
+  ]
+  ask predators [if satiety > 0 [set satiety satiety - 5]]
+  tick
+end
+
+to turn-at-most [turn max-turn]                      ; simple turning algorithm for predators
+  ifelse abs turn > max-turn
+    [ ifelse turn > 0
+        [ rt max-turn ]
+        [ lt max-turn ] ]
+    [ rt turn ]
+end
+
+to pick.patch                                      ; observer procedure
+  ask fishes with [picked.patch = false] [
+   let chosen.patch patch-ahead 2 ; one-of patches in-cone 4 perception.angle
+
+   if [pxcor] of chosen.patch > (world-width - (picked.patch.dist + 1)) [                                              ; create a (picked.patch.dist + 1) -wide buffer so that picked patches are not too close to the edges
+    let new.chosen.patch patch ([pxcor] of chosen.patch - (picked.patch.dist + 1)) ([pycor] of chosen.patch)
+    set chosen.patch new.chosen.patch
+   ]
+   if [pxcor] of chosen.patch < (picked.patch.dist + 1) [
+    let new.chosen.patch patch ([pxcor] of chosen.patch + (picked.patch.dist + 1)) ([pycor] of chosen.patch)
+    set chosen.patch new.chosen.patch
+   ]
+   if [pycor] of chosen.patch > (world-height - (picked.patch.dist + 1)) [
+    let new.chosen.patch patch ([pxcor] of chosen.patch) ([pycor] of chosen.patch - (picked.patch.dist + 1))
+    set chosen.patch new.chosen.patch
+   ]
+   if [pycor] of chosen.patch < (picked.patch.dist + 1) [
+    let new.chosen.patch patch ([pxcor] of chosen.patch) ([pycor] of chosen.patch + (picked.patch.dist + 1))
+    set chosen.patch new.chosen.patch
+   ]
+
+   set picked.patch chosen.patch
+   if any? schoolmates [
+    ask schoolmates [
+     set picked.patch chosen.patch
+    ]
+   ]]
+end
+
+to deploy-diver
+  output-print "Diver created at the bottom"
+  output-print "of the display."
+  create-divers 1 [
+   set shape "diver"
+   set size 1.7
+   set color green
+   set heading 0
+   setxy (world-width / 2) 0
+  ]
+end
+
+to deploy-predator
+  output-print "Placing 1 predator..."
+  create-predators 1 [
+    set shape "fish top"
+    set size predator.size
+    set color red
+    set satiety random 101
+    setxy random-xcor random-ycor
+    ]
+end
+
+
+to do.fish.movement  ;; fish procedure
+  ;if schooling is enabled, look for fishes in my vicinity
+  if schooling? [set schoolmates other fishes in-cone perception.dist perception.angle]
+
+  set acceleration (list 0 0)
+
+
+  if patch.gathering.w != 0 [add-urge patch-center-urge patch.gathering.w]                    ; check if weights are not 0 (to prevent useless calculations) and calculate all urge vectors
+  if wander.w != 0 [add-urge wander-urge wander.w]
+  if predator.avoidance.w != 0 [add-urge avoid-predator-urge predator.avoidance.w]
+  if diver.avoidance.w != 0 [add-urge avoid-diver-urge diver.avoidance.w]
+  if rest.w != 0 [add-urge rest-urge rest.w]
+  if cruise.w != 0 [add-urge cruise-urge cruise.w]
+
+
+  ;if I'm not in a school ignore the school related urges. If schooling is disabled, ignore them as well
+  if count schoolmates > 0 and schooling?
+  [ add-urge spacing-urge spacing.w
+    add-urge center-urge center.w
+    add-urge align-urge align.w ]
+
+
+  ;acceleration due to drag is in the opposite direction of the velocity vector
+  let deceleration (scale ((drag.formula * ((magnitude velocity) ^ 2))) (subtract (list 0 0) (normalize velocity)))
+  set acceleration (add acceleration deceleration)
+
+
+  ;keep the acceleration within the accepted range
+  if magnitude acceleration > max.acceleration
+  [ set acceleration
+    (scale
+        max.acceleration
+        normalize acceleration) ]
+
+  ;the new velocity of the fish is sum of the acceleration and the old velocity.
+  set velocity (add velocity acceleration)
+
+
+  ;keep velocity within accepted range. When near threats, use burst.speed as limit, but only if avoidance urge weight is greater than 0
+
+  ifelse ((any? predators in-cone approach.dist perception.angle) and (predator.avoidance.w > 0)) or ((any? divers in-cone approach.dist perception.angle) and (diver.avoidance.w > 0)) [
+   if magnitude velocity > burst.speed [
+     set velocity (scale burst.speed normalize velocity)
+     ]
+  ] [
+
+  if magnitude velocity > max.sustained.speed
+  [ set velocity
+    (scale
+        max.sustained.speed
+        normalize velocity) ]
+  ]
+
+  let nxcor xcor + ( first velocity )
+  let nycor ycor + ( last velocity )
+  if magnitude velocity > 0.2 [                          ; minimum velocity that triggers movement. This is to prevent erratic movement when stopped.
+    facexy nxcor nycor
+    fd (magnitude velocity) / movement.time.step]
+
+end ;of do.fish.movement
+
+to add-urge [urge factor] ;; fish procedure
+  set acceleration add acceleration scale factor normalize urge
+end
+
+
+to-report patch-center-urge  ; a vector directed at the center of the picked patch
+  ifelse picked.patch != false [
+    let patch-x [pxcor] of picked.patch
+    let patch-y [pycor] of picked.patch
+    ifelse distancexy patch-x patch-y > picked.patch.dist   ; distance to picked patch
+     [ report (list (patch-x - xcor) (patch-y - ycor)) ]   ; number of coordinate units (vertical and horizontal) needed to get to picked.patch
+     [ report (list 0 0) ]
+    ] [ report (list 0 0) ]
+end
+
+
+to-report center-urge  ; a vector directed at the average location of my schoolmates
+
+  if count schoolmates = 0 or center.w = 0
+  [ report (list 0 0) ]
+  report
+    (map -
+      (list mean [ xcor ] of schoolmates mean [ ycor ] of schoolmates)
+      (list xcor ycor)
+  )
+end
+
+to-report align-urge ; a vector obtained by averaging the velocity of schoolmates
+  if count schoolmates = 0 or align.w = 0
+  [ report (list 0 0) ]
+  report
+    (map - (list
+      mean [ first velocity ] of schoolmates   ; x component
+     mean [ last velocity ] of schoolmates     ; y component
+     )
+  velocity
+  )
+end
+
+to-report rest-urge ;a vector opposite to current velocity (counters current movement)
+  report subtract [0 0] velocity
+end
+
+
+to-report cruise-urge ; a vector that simply reinforces the current velocity
+  report normalize velocity
+end
+
+to-report wander-urge ; reports 2 random numbers between -1 and 1, leading to a vector with random direction
+  report n-values 2 [ (random-float 2) - 1 ]
+end
+
+to-report spacing-urge
+  let urge [ 0 0 ]
+  ;; report the sum of the distances to fishes
+  ;; in my school that are closer to me than
+  ;; schoolmate.dist (in body lengths)
+  ask schoolmates with [ distance myself < (schoolmate.dist * size) ] [
+    set urge
+      add
+        urge
+        (subtract
+          (list [xcor] of myself [ycor] of myself)
+          (list xcor ycor))
+  ]
+  report urge
+end
+
+to-report avoid-predator-urge ; a normalized vector that is opposite to the position of the closest predator
+ let urge (list 0 0)
+  if predator.avoidance.w = 0 [ report urge ]
+  let threats predators in-cone approach.dist perception.angle
+  if any? threats [ask min-one-of threats [distance myself]
+  [set urge normalize (add urge subtract (list [xcor] of myself [ycor] of myself) (list xcor ycor))
+    ]]
+  report urge
+end
+
+to-report avoid-diver-urge ; a normalized vector that is opposite to the position of the closest diver
+ let urge (list 0 0)
+  if diver.avoidance.w = 0 [ report urge ]
+  let human_threats divers in-cone approach.dist perception.angle
+  if any? human_threats [ask min-one-of human_threats [distance myself]
+  [set urge normalize (add urge subtract (list [xcor] of myself [ycor] of myself) (list xcor ycor))
+    ]]
+  report urge
+end
+
+
+; useful reporters
+
+to-report random-bernoulli [probability-true]
+  if probability-true < 0.0 or probability-true > 1.0 [user-message "WARNING: probability outside 0-1 range in random-bernoulli."]
+  report random-float 1.0 < probability-true
+end
+
+to-report random-float-between [a b]
+  report random-float a + (b - a)
+end
+
+
+; vector operations
+
+to-report add [ v1 v2 ]
+  report (map + v1 v2)
+end
+
+to-report subtract [ v1 v2 ]
+  report (map - v1 v2)
+end
+
+to-report scale [ scalar vector ]
+  report map [ [v] -> scalar * v ] vector
+end
+
+to-report magnitude [ vector ]
+  report sqrt sum map [ [v] -> v * v ] vector
+end
+
+to-report normalize [ vector ]
+  let m magnitude vector
+  if m = 0 [ report vector ]
+  report map [ [v] -> v / m ] vector
+end
+
+
+; Saving and loading species data
+
+to save.species.data
+  if (b1.freq + b2.freq + b3.freq + b4.freq) != 1 [user-message "ERROR: Sum of behavior frequencies must be 1." stop] ;check if behavior frequencies add up to 1
+  set sp.param (list species.name "fish top" fish.size fish.color fish.density id.distance approach.dist perception.dist perception.angle prey.type max.acceleration max.sustained.speed burst.speed length-surface drag-coefficient lw-a lw-b water-density)
+  if b1.freq = 0 [set b1.name "n/a" set b1.sp.param ["n/a" 0 0 false 0 0 0 0 0 0 0 0 0 0 0 0] ; check behaviors to see if any of them have freq 0 and fill them with zeros
+    output-print "Behavior 1 saved as an empty slot."]
+  if b2.freq = 0 [set b2.name "n/a" set b2.sp.param ["n/a" 0 0 false 0 0 0 0 0 0 0 0 0 0 0 0]
+    output-print "Behavior 2 saved as an empty slot."]
+  if b3.freq = 0 [set b3.name "n/a" set b3.sp.param ["n/a" 0 0 false 0 0 0 0 0 0 0 0 0 0 0 0]
+    output-print "Behavior 3 saved as an empty slot."]
+  if b4.freq = 0 [set b4.name "n/a" set b4.sp.param ["n/a" 0 0 false 0 0 0 0 0 0 0 0 0 0 0 0]
+    output-print "Behavior 4 saved as an empty slot."]
+  let behavior.param (sentence b1.sp.param b2.sp.param b3.sp.param b4.sp.param)
+  let file.name word user-input "Choose name for the csv file. Any file with the same name will be overwritten." ".csv"
+  (csv:to-file file.name (list (list
+      "Species" "shape" "size" "color" "density" "id.distance" "approach.dist" "perception.dist" "perception.angle" "prey.type"
+      "max.acceleration" "max.sustained.speed" "burst.speed" "length-surface" "drag-coefficient" "lw-a" "lw-b" "water-density"
+      "B1.name" "B1.frequency" "B1.detectability" "B1.schooling?" "B1.schoolmate.dist" "B1.align.w" "B1.center.w" "B1.spacing.w" "B1.wander.w" "B1.rest.w" "B1.cruise.w" "B1.picked.patch.dist" "B1.patch.gathering.w" "B1.predator.avoidance.w" "B1.prey.chasing.w" "B1.diver.avoidance.w"
+      "B2.name" "B2.frequency" "B2.detectability" "B2.schooling?" "B2.schoolmate.dist" "B2.align.w" "B2.center.w" "B2.spacing.w" "B2.wander.w" "B2.rest.w" "B2.cruise.w" "B2.picked.patch.dist" "B2.patch.gathering.w" "B2.predator.avoidance.w" "B2.prey.chasing.w" "B2.diver.avoidance.w"
+      "B3.name" "B3.frequency" "B3.detectability" "B3.schooling?" "B3.schoolmate.dist" "B3.align.w" "B3.center.w" "B3.spacing.w" "B3.wander.w" "B3.rest.w" "B3.cruise.w" "B3.picked.patch.dist" "B3.patch.gathering.w" "B3.predator.avoidance.w" "B3.prey.chasing.w" "B3.diver.avoidance.w"
+      "B4.name" "B4.frequency" "B4.detectability" "B4.schooling?" "B4.schoolmate.dist" "B4.align.w" "B4.center.w" "B4.spacing.w" "B4.wander.w" "B4.rest.w" "B4.cruise.w" "B4.picked.patch.dist" "B4.patch.gathering.w" "B4.predator.avoidance.w" "B4.prey.chasing.w" "B4.diver.avoidance.w") sentence sp.param behavior.param) ",")
+  output-print "Species data saved."
+  file-close-all                                                                 ; prevents csv file from being impossible to delete after closing NetLogo (I think...)
+  user-message (word "File " file.name " was created and can be found in the model folder.")
+end
+
+to load.species.data
+  output-print "Importing species data..."
+  let import.name (word user-input "Name of the .csv file with species parameters? (exclude extension)" ".csv")
+  carefully [let species.data (csv:from-file import.name csv.delimiter)                            ; import csv file into a list of lists
+  let nr.species length species.data - 1                                                            ; all filled lines minus the header
+  user-message (word "Detected " nr.species " species in the file. If more than one, only the first will be imported.")
+  output-print "Setting species parameter values..."
+  let params item 1 species.data
+  if length params != 82 [user-message (word "ERROR: Species parameter list must have 82 values. Check number of columns in input file.") stop] ; ERROR MESSAGE
+  set species.name item 0 params
+  set fish.size item 2 params
+  set fish.color item 3 params
+  set fish.density item 4 params
+  set id.distance item 5 params
+  set approach.dist item 6 params
+  set perception.dist item 7 params
+  set perception.angle item 8 params
+  set prey.type item 9 params
+  set max.acceleration item 10 params
+  set max.sustained.speed item 11 params
+  set burst.speed item 12 params
+  set length-surface item 13 params
+  set drag-coefficient item 14 params
+  set lw-a item 15 params
+  set lw-b item 16 params
+  set water-density item 17 params
+  set b1.sp.param sublist params 18 34
+  set b2.sp.param sublist params 34 50
+  set b3.sp.param sublist params 50 66
+  set b4.sp.param sublist params 66 82
+    ]
+  [user-message (word "File " import.name " not found in model folder.") stop]
+  output-print "Loading behavior parameters..."
+  setup
+  load.b1 load.b2 load.b3 load.b4
+  load.b1
+  output-print "Done"
+  file-close-all
+  user-message (word "Species data imported from " import.name ". Behavior 1 has been automatically loaded.")
+end
+
+; Saving behavior parameters
+
+to save.b1
+  if b1.freq = 0 [set b1.name "n/a" set b1.sp.param ["n/a" 0 0 false 0 0 0 0 0 0 0 0 0 0 0 0]
+    output-print "Behavior 1 saved as an empty slot."
+    stop]
+  set b1.sp.param (list b1.name b1.freq detectability schooling? schoolmate.dist align.w center.w spacing.w wander.w rest.w cruise.w picked.patch.dist patch.gathering.w predator.avoidance.w prey.chasing.w diver.avoidance.w)
+  set loaded.behavior b1.name
+  output-print "Behavior 1 saved."
+end
+
+to save.b2
+  if b2.freq = 0 [set b2.name "n/a" set b2.sp.param ["n/a" 0 0 false 0 0 0 0 0 0 0 0 0 0 0 0]
+    output-print "Behavior 2 saved as an empty slot."
+    stop]
+  set b2.sp.param (list b2.name b2.freq detectability schooling? schoolmate.dist align.w center.w spacing.w wander.w rest.w cruise.w picked.patch.dist patch.gathering.w predator.avoidance.w prey.chasing.w diver.avoidance.w)
+  set loaded.behavior b2.name
+  output-print "Behavior 2 saved."
+end
+
+to save.b3
+  if b3.freq = 0 [set b3.name "n/a" set b3.sp.param ["n/a" 0 0 false 0 0 0 0 0 0 0 0 0 0 0 0]
+    output-print "Behavior 3 saved as an empty slot."
+    stop]
+  set b3.sp.param (list b3.name b3.freq detectability schooling? schoolmate.dist align.w center.w spacing.w wander.w rest.w cruise.w picked.patch.dist patch.gathering.w predator.avoidance.w prey.chasing.w diver.avoidance.w)
+  set loaded.behavior b3.name
+  output-print "Behavior 3 saved."
+end
+
+to save.b4
+  if b4.freq = 0 [set b4.name "n/a" set b4.sp.param ["n/a" 0 0 false 0 0 0 0 0 0 0 0 0 0 0 0]
+    output-print "Behavior 4 saved as an empty slot."
+    stop]
+  set b4.sp.param (list b4.name b4.freq detectability schooling? schoolmate.dist align.w center.w spacing.w wander.w rest.w cruise.w picked.patch.dist patch.gathering.w predator.avoidance.w prey.chasing.w diver.avoidance.w)
+  set loaded.behavior b4.name
+  output-print "Behavior 4 saved."
+end
+
+
+; Loading behavior parameters
+
+to load.b1
+  set b1.name item 0 b1.sp.param
+  set b1.freq item 1 b1.sp.param
+  if b1.freq = 0 [output-print "Behavior slot 1 is empty." stop]
+  set detectability item 2 b1.sp.param
+  set schooling? item 3 b1.sp.param
+  set schoolmate.dist item 4 b1.sp.param
+  set align.w item 5 b1.sp.param
+  set center.w item 6 b1.sp.param
+  set spacing.w item 7 b1.sp.param
+  set wander.w item 8 b1.sp.param
+  set rest.w item 9 b1.sp.param
+  set cruise.w item 10 b1.sp.param
+  set picked.patch.dist item 11 b1.sp.param
+  set patch.gathering.w item 12 b1.sp.param
+  set predator.avoidance.w item 13 b1.sp.param
+  set prey.chasing.w item 14 b1.sp.param
+  set diver.avoidance.w item 15 b1.sp.param
+  set loaded.behavior b1.name
+  ifelse patch.gathering.w > 0 [
+   pick.patch
+   ] [
+   ask fishes [
+    set picked.patch false
+    ]
+   ]
+   ifelse detectability < 1 [
+     ask fishes [
+       set visible? random-bernoulli detectability                                 ; determine the visibility of fishes if detectability < 1
+       ifelse visible? [set color fish.color] [set color fish.color - 3]           ; make fishes appear darker when hidden
+     ]
+     ][
+     ask fishes [
+       set visible? true
+       set color fish.color
+       ]
+     ]
+end
+
+to load.b2
+  set b2.name item 0 b2.sp.param
+  set b2.freq item 1 b2.sp.param
+  if b2.freq = 0 [output-print "Behavior slot 2 is empty." stop]
+  set detectability item 2 b2.sp.param
+  set schooling? item 3 b2.sp.param
+  set schoolmate.dist item 4 b2.sp.param
+  set align.w item 5 b2.sp.param
+  set center.w item 6 b2.sp.param
+  set spacing.w item 7 b2.sp.param
+  set wander.w item 8 b2.sp.param
+  set rest.w item 9 b2.sp.param
+  set cruise.w item 10 b2.sp.param
+  set picked.patch.dist item 11 b2.sp.param
+  set patch.gathering.w item 12 b2.sp.param
+  set predator.avoidance.w item 13 b2.sp.param
+  set prey.chasing.w item 14 b2.sp.param
+  set diver.avoidance.w item 15 b2.sp.param
+  set loaded.behavior b2.name
+  ifelse patch.gathering.w > 0 [
+   pick.patch
+   ] [
+   ask fishes [
+    set picked.patch false
+   ]
+   ]
+   ifelse detectability < 1 [
+     ask fishes [
+       set visible? random-bernoulli detectability                                 ; determine the visibility of fishes if detectability < 1
+       ifelse visible? [set color fish.color] [set color fish.color - 3]           ; make fishes appear darker when hidden
+     ]
+     ][
+     ask fishes [
+       set visible? true
+       set color fish.color
+       ]
+     ]
+end
+
+to load.b3
+  set b3.name item 0 b3.sp.param
+  set b3.freq item 1 b3.sp.param
+  if b3.freq = 0 [output-print "Behavior slot 3 is empty." stop]
+  set detectability item 2 b3.sp.param
+  set schooling? item 3 b3.sp.param
+  set schoolmate.dist item 4 b3.sp.param
+  set align.w item 5 b3.sp.param
+  set center.w item 6 b3.sp.param
+  set spacing.w item 7 b3.sp.param
+  set wander.w item 8 b3.sp.param
+  set rest.w item 9 b3.sp.param
+  set cruise.w item 10 b3.sp.param
+  set picked.patch.dist item 11 b3.sp.param
+  set patch.gathering.w item 12 b3.sp.param
+  set predator.avoidance.w item 13 b3.sp.param
+  set prey.chasing.w item 14 b3.sp.param
+  set diver.avoidance.w item 15 b3.sp.param
+  set loaded.behavior b3.name
+  ifelse patch.gathering.w > 0 [
+   pick.patch
+   ] [
+   ask fishes [
+    set picked.patch false
+   ]
+   ]
+   ifelse detectability < 1 [
+     ask fishes [
+       set visible? random-bernoulli detectability                                 ; determine the visibility of fishes if detectability < 1
+       ifelse visible? [set color fish.color] [set color fish.color - 3]           ; make fishes appear darker when hidden
+     ]
+     ][
+     ask fishes [
+       set visible? true
+       set color fish.color
+       ]
+     ]
+end
+
+to load.b4
+  set b4.name item 0 b4.sp.param
+  set b4.freq item 1 b4.sp.param
+  if b4.freq = 0 [output-print "Behavior slot 4 is empty." stop]
+  set detectability item 2 b4.sp.param
+  set schooling? item 3 b4.sp.param
+  set schoolmate.dist item 4 b4.sp.param
+  set align.w item 5 b4.sp.param
+  set center.w item 6 b4.sp.param
+  set spacing.w item 7 b4.sp.param
+  set wander.w item 8 b4.sp.param
+  set rest.w item 9 b4.sp.param
+  set cruise.w item 10 b4.sp.param
+  set picked.patch.dist item 11 b4.sp.param
+  set patch.gathering.w item 12 b4.sp.param
+  set predator.avoidance.w item 13 b4.sp.param
+  set prey.chasing.w item 14 b4.sp.param
+  set diver.avoidance.w item 15 b4.sp.param
+  set loaded.behavior b4.name
+  ifelse patch.gathering.w > 0 [
+   pick.patch
+   ] [
+   ask fishes [
+    set picked.patch false
+   ]
+   ]
+   ifelse detectability < 1 [
+     ask fishes [
+       set visible? random-bernoulli detectability                                 ; determine the visibility of fishes if detectability < 1
+       ifelse visible? [set color fish.color] [set color fish.color - 3]           ; make fishes appear darker when hidden
+     ]
+     ][
+     ask fishes [
+       set visible? true
+       set color fish.color
+       ]
+     ]
+end
+
+
+; START WITH A CLEAN SLATE
+
+to create-new-species
+  ca
+  set b1.freq 0
+  set b2.freq 0
+  set b3.freq 0
+  set b4.freq 0
+  save.b1 save.b2 save.b3 save.b4
+  set species.name "new species"
+  set fish.size 0.3
+  set fish.color 9.9
+  set fish.density 0.3
+  set id.distance 5
+  set approach.dist 1.5
+  set perception.dist 0.6
+  set perception.angle 320
+  set prey.type "benthic"
+  set max.acceleration 0.15
+  set max.sustained.speed 0.5
+  set burst.speed 2.9
+  set aspect.ratio 3
+  set detectability 1
+  set schooling? true
+  set schoolmate.dist 1
+  set align.w 10
+  set center.w 5
+  set spacing.w 20
+  set wander.w 8
+  set rest.w 0
+  set cruise.w 0
+  set picked.patch.dist 1
+  set patch.gathering.w 0
+  set predator.avoidance.w 100
+  set prey.chasing.w 0
+  set diver.avoidance.w 10
+  set loaded.behavior "new behavior"
+  set length-surface 0.4
+  set drag-coefficient 0.011
+  set lw-a 0.01989
+  set lw-b 2.8571
+  set water-density "Seawater - 1027 Kg/m3"
+  setup
+end]]></code>
+  <widgets>
+    <view x="540" wrappingAllowedX="true" y="10" frameRate="10.0" minPycor="0" height="904" showTickCounter="true" patchSize="30.0" fontSize="10" wrappingAllowedY="true" width="604" tickCounterLabel="seconds" maxPycor="29" updateMode="1" maxPxcor="19" minPxcor="0"></view>
+    <switch x="1215" y="655" height="40" on="true" variable="smooth.animation?" width="245" display="smooth.animation?"></switch>
+    <output x="790" y="950" height="90" fontSize="11" width="415"></output>
+    <note x="1220" y="10" backgroundDark="0" fontSize="11" width="150" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Predator movement</note>
+    <slider x="1215" step="0.1" y="33" max="2" width="245" display="predator.size" height="50" min="0.1" direction="Horizontal" default="0.5" variable="predator.size" units="meters"></slider>
+    <slider x="1215" step="0.01" y="88" max="4" width="245" display="predator.normal.speed" height="50" min="0.01" direction="Horizontal" default="0.5" variable="predator.normal.speed" units="m/s"></slider>
+    <slider x="1215" step="1" y="198" max="90" width="245" display="predator.max.turn" height="50" min="5" direction="Horizontal" default="20.0" variable="predator.max.turn" units="degrees"></slider>
+    <slider x="1215" step="0.01" y="143" max="4" width="245" display="predator.burst.speed" height="50" min="0.01" direction="Horizontal" default="1.17" variable="predator.burst.speed" units="m/s"></slider>
+    <slider x="1215" step="1" y="253" max="360" width="245" display="predator.vision.angle" height="50" min="90" direction="Horizontal" default="270.0" variable="predator.vision.angle" units="degrees"></slider>
+    <slider x="1215" step="0.1" y="308" max="5" width="245" display="predator.vision.distance" height="50" min="0.1" direction="Horizontal" default="2.0" variable="predator.vision.distance" units="meters"></slider>
+    <button x="1232" y="453" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="245" display="Deploy diver">deploy-diver</button>
+    <note x="1482" y="345" backgroundDark="0" fontSize="11" width="220" markdown="false" height="30" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Divers move forward at a constant speed of 8m per minute.</note>
+    <button x="790" y="1045" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="415" display="Clear output">clear-output</button>
+    <button x="1215" y="727" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="245" display="Focus on random fish">let chosen-one one-of fishes
+follow chosen-one
+inspect chosen-one</button>
+    <button x="1215" y="817" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="245" display="Reset perspective">reset-perspective</button>
+    <chooser x="1215" y="555" height="60" variable="movement.time.step" current="1" width="245" display="movement.time.step">
+      <choice type="double" value="5.0"></choice>
+      <choice type="double" value="10.0"></choice>
+    </chooser>
+    <button x="1215" y="363" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="245" display="Deploy predator">deploy-predator</button>
+    <button x="1232" y="408" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="245" display="Remove predators">ask predators [die]</button>
+    <button x="1227" y="498" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="245" display="Remove divers">ask divers [die]</button>
+    <note x="1237" y="578" backgroundDark="0" fontSize="11" width="105" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">decisions per second</note>
+    <note x="1470" y="565" backgroundDark="0" fontSize="11" width="235" markdown="false" height="30" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Number of speed and heading decisions each fish makes in a second.</note>
+    <note x="1220" y="620" backgroundDark="0" fontSize="11" width="250" markdown="false" height="30" textColorDark="-1" textColorLight="-2674135" backgroundLight="0">Match model frame rate in model settings to this value so that normal speed equals real time!</note>
+    <button x="1215" y="772" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="245" display="Focus on a diver">if any? divers [
+let chosen-diver one-of divers
+follow chosen-diver
+inspect chosen-diver
+]</button>
+    <note x="1220" y="969" backgroundDark="0" fontSize="11" width="240" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">DRAG FORCE PARAMETERS</note>
+    <input x="1270" multiline="false" y="999" height="60" variable="length-surface" type="number" width="100">0.4</input>
+    <note x="1375" y="1029" backgroundDark="0" fontSize="11" width="75" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">* length^2</note>
+    <note x="1220" y="1014" backgroundDark="0" fontSize="11" width="45" markdown="false" height="30" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Surface area =</note>
+    <input x="1260" multiline="false" y="1064" height="60" variable="drag-coefficient" type="number" width="100">0.011</input>
+    <note x="1225" y="1129" backgroundDark="0" fontSize="11" width="175" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">length-weight (W = a * L^b)</note>
+    <input x="1220" multiline="false" y="1149" height="60" variable="lw-a" type="number" width="100">0.01989</input>
+    <input x="1325" multiline="false" y="1149" height="60" variable="lw-b" type="number" width="100">2.8571</input>
+    <note x="1430" y="1174" backgroundDark="0" fontSize="11" width="150" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">in g and cm</note>
+    <button x="1365" y="1059" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="105" display="defaults">set length-surface 0.4
+set drag-coefficient 0.011
+set lw-a 0.01989
+set lw-b 2.8571
+set water-density "Seawater - 1027 Kg/m3"</button>
+    <chooser x="1220" y="1214" height="60" variable="water-density" current="0" width="240" display="water-density">
+      <choice type="string" value="Seawater - 1027 Kg/m3"></choice>
+      <choice type="string" value="Freshwater - 1000 Kg/m3"></choice>
+    </chooser>
+    <note x="1375" y="1004" backgroundDark="0" fontSize="11" width="110" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">in g and cm2
+</note>
+    <button x="1215" y="864" height="45" disableUntilTicks="false" forever="false" kind="Observer" width="120" display="Draw fish path">ask fishes [pen-down]</button>
+    <button x="1340" y="864" height="45" disableUntilTicks="false" forever="false" kind="Observer" width="120" display="Stop drawing">ask fishes [pen-up]
+clear-drawing</button>
+    <button x="595" y="1030" height="50" disableUntilTicks="true" forever="false" kind="Observer" width="190" display="Calculate average school size"><![CDATA[if not schooling? [output-print "Schooling is disabled" stop]
+set schoolmate-counts []
+ask fishes with [count other fishes in-radius school.size.reference.radius > 1] [
+set schoolmate-counts lput (count other fishes in-radius school.size.reference.radius) schoolmate-counts
+]
+output-print (word "Average school size is " precision (mean schoolmate-counts) 0 " +/- " precision (standard-deviation schoolmate-counts) 0)]]></button>
+    <slider x="595" step="0.1" y="1085" max="5" width="190" display="school.size.reference.radius" height="50" min="0.1" direction="Horizontal" default="1.0" variable="school.size.reference.radius" units="m"></slider>
+    <button x="1215" y="914" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="120" display="Show speeds">ask fishes [set label precision (magnitude velocity) 2]</button>
+    <button x="1340" y="914" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="120" display="Clear labels">ask fishes [set label ""]</button>
+    <note x="1220" y="707" backgroundDark="0" fontSize="11" width="150" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">PERSPECTIVE</note>
+    <note x="1470" y="640" backgroundDark="0" fontSize="11" width="235" markdown="false" height="35" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">on: update view every movement.time.step
+off: update view every second</note>
+    <note x="1475" y="1084" backgroundDark="0" fontSize="11" width="150" markdown="false" height="26" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Default values are for Atlantic Cod (Gadus morhua)</note>
+    <note x="15" y="10" backgroundDark="0" fontSize="16" width="510" markdown="true" height="50" textColorDark="-11033397" textColorLight="-13791810" backgroundLight="0">**Fish Census Model - Version 3.0 by Miguel Pessanha Pais**</note>
+    <note x="15" y="55" backgroundDark="0" fontSize="16" width="205" markdown="true" height="50" textColorDark="-11033397" textColorLight="-13791810" backgroundLight="0">  **SPECIES CREATOR TOOL**</note>
+    <note x="240" y="60" backgroundDark="0" fontSize="11" width="285" markdown="false" height="56" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">This NetLogo program is a tool to parameterize fish species and export them as csv files to import into the FishCensus Model (FishCensus.nlogox).</note>
+    <button x="15" y="120" height="45" disableUntilTicks="false" forever="false" kind="Observer" width="240" display="Create new species">create-new-species</button>
+    <note x="315" y="475" backgroundDark="0" fontSize="11" width="215" markdown="false" height="50" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Estimate sustained and burst speed from caudal fin aspect ratio and body length.</note>
+    <slider x="260" step="0.01" y="235" max="1" width="265" display="fish.density" height="50" min="0" direction="Horizontal" default="0.3" variable="fish.density" units="fishes / m^2"></slider>
+    <slider x="15" step="0.05" y="258" max="5" width="240" display="perception.dist" height="50" min="0.05" direction="Horizontal" default="0.35" variable="perception.dist" units="meters"></slider>
+    <slider x="15" step="0.1" y="425" max="10" width="192" display="max.sustained.speed" height="50" min="0" direction="Horizontal" default="0.5" variable="max.sustained.speed" units="m/s"></slider>
+    <slider x="15" step="0.05" y="554" max="2" width="240" display="max.acceleration" height="50" min="0" direction="Horizontal" default="0.2" variable="max.acceleration" units="m/s^2"></slider>
+    <slider x="20" step="0.1" y="921" max="10" width="212" display="schoolmate.dist" height="50" min="0.1" direction="Horizontal" default="1.0" variable="schoolmate.dist" units="body lenghts"></slider>
+    <slider x="20" step="1" y="866" max="50" width="210" display="spacing.w" height="50" min="0" direction="Horizontal" default="15.0" variable="spacing.w"></slider>
+    <slider x="20" step="1" y="811" max="20" width="210" display="center.w" height="50" min="0" direction="Horizontal" default="6.0" variable="center.w"></slider>
+    <slider x="20" step="1" y="756" max="20" width="210" display="align.w" height="50" min="0" direction="Horizontal" default="5.0" variable="align.w"></slider>
+    <slider x="250" step="1" y="766" max="10" width="172" display="wander.w" height="50" min="0" direction="Horizontal" default="3.0" variable="wander.w"></slider>
+    <slider x="255" step="0.5" y="1008" max="10" width="175" display="picked.patch.dist" height="50" min="0" direction="Horizontal" default="1.0" variable="picked.patch.dist" units="meters"></slider>
+    <slider x="20" step="1" y="1003" max="100" width="170" display="predator.avoidance.w" height="50" min="-5" direction="Horizontal" default="10.0" variable="predator.avoidance.w"></slider>
+    <switch x="20" y="711" height="40" on="true" variable="schooling?" width="210" display="schooling?"></switch>
+    <slider x="15" step="5" y="313" max="360" width="240" display="perception.angle" height="50" min="45" direction="Horizontal" default="320.0" variable="perception.angle" units="degrees"></slider>
+    <slider x="20" step="1" y="1058" max="100" width="170" display="diver.avoidance.w" height="50" min="-5" direction="Horizontal" default="10.0" variable="diver.avoidance.w"></slider>
+    <slider x="255" step="1" y="1065" max="20" width="175" display="patch.gathering.w" height="50" min="0" direction="Horizontal" default="0.0" variable="patch.gathering.w"></slider>
+    <slider x="15" step="0.1" y="368" max="10" width="240" display="approach.dist" height="50" min="0.5" direction="Horizontal" default="1.0" variable="approach.dist" units="meters"></slider>
+    <input x="15" multiline="false" y="170" height="60" variable="species.name" type="string" width="240">Schooling</input>
+    <note x="20" y="691" backgroundDark="0" fontSize="11" width="150" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Schooling parameters</note>
+    <note x="20" y="983" backgroundDark="0" fontSize="11" width="150" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Avoidance urges</note>
+    <note x="15" y="235" backgroundDark="0" fontSize="11" width="150" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Fixed species parameters</note>
+    <note x="250" y="691" backgroundDark="0" fontSize="11" width="150" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Individual movement</note>
+    <note x="250" y="988" backgroundDark="0" fontSize="11" width="150" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Gathering parameters</note>
+    <input x="20" multiline="false" y="1262" height="60" variable="B1.name" type="string" width="145">wandering</input>
+    <button x="325" y="1232" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="75" display="Save as B1">save.b1</button>
+    <input x="20" multiline="false" y="1327" height="60" variable="B2.name" type="string" width="145">feeding</input>
+    <input x="20" multiline="false" y="1392" height="60" variable="B3.name" type="string" width="145">stationary</input>
+    <input x="20" multiline="false" y="1457" height="60" variable="B4.name" type="string" width="145">n/a</input>
+    <button x="325" y="1297" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="75" display="Save as B2">save.b2</button>
+    <button x="325" y="1362" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="75" display="Save as B3">save.b3</button>
+    <button x="325" y="1427" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="75" display="Save as B4">save.b4</button>
+    <button x="405" y="1232" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="70" display="Load B1">load.b1</button>
+    <button x="405" y="1297" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="70" display="Load B2">load.b2</button>
+    <button x="405" y="1362" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="70" display="Load B3">load.b3</button>
+    <button x="405" y="1427" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="70" display="Load B4">load.b4</button>
+    <slider x="260" step="0.01" y="290" max="1" width="265" display="fish.size" height="50" min="0.05" direction="Horizontal" default="0.2" variable="fish.size" units="meters"></slider>
+    <button x="20" y="1575" height="45" disableUntilTicks="false" forever="false" kind="Observer" width="390" display="Save species data to file">save.species.data</button>
+    <button x="260" y="120" height="45" disableUntilTicks="false" forever="false" kind="Observer" width="265" display="Load species data from file">load.species.data</button>
+    <slider x="15" step="0.5" y="609" max="20" width="240" display="id.distance" height="50" min="0.5" direction="Horizontal" default="4.0" variable="id.distance" units="meters"></slider>
+    <monitor x="260" precision="0" y="170" height="60" fontSize="11" width="155" display="Nr. fishes">count fishes</monitor>
+    <slider x="170" step="0.05" y="1287" max="1" width="150" display="b1.freq" height="50" min="0" direction="Horizontal" default="0.5" variable="b1.freq"></slider>
+    <slider x="170" step="0.05" y="1364" max="1" width="150" display="b2.freq" height="50" min="0" direction="Horizontal" default="0.2" variable="b2.freq"></slider>
+    <slider x="170" step="0.05" y="1441" max="1" width="150" display="b3.freq" height="50" min="0" direction="Horizontal" default="0.3" variable="b3.freq"></slider>
+    <slider x="170" step="0.05" y="1518" max="1" width="150" display="b4.freq" height="50" min="0" direction="Horizontal" default="0.0" variable="b4.freq"></slider>
+    <monitor x="20" precision="2" y="1197" height="60" fontSize="11" width="245" display="Sum of frequencies (must be 1)">b1.freq + b2.freq + b3.freq + b4.freq</monitor>
+    <slider x="250" step="0.1" y="711" max="1" width="172" display="detectability" height="50" min="0" direction="Horizontal" default="1.0" variable="detectability"></slider>
+    <note x="20" y="671" backgroundDark="0" fontSize="11" width="500" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">BEHAVIOR PARAMETERS______________________________________________________________</note>
+    <monitor x="20" precision="17" y="1132" height="60" fontSize="11" width="245" display="Current behavior">loaded.behavior</monitor>
+    <slider x="250" step="1" y="931" max="50" width="172" display="prey.chasing.w" height="50" min="0" direction="Horizontal" default="0.0" variable="prey.chasing.w"></slider>
+    <note x="270" y="1182" backgroundDark="0" fontSize="11" width="155" markdown="false" height="41" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">To save an empty behavior, simply set frequency to 0 and save.</note>
+    <button x="435" y="951" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="75" display="Pick patch">pick.patch</button>
+    <slider x="250" step="1" y="821" max="20" width="172" display="rest.w" height="50" min="0" direction="Horizontal" default="0.0" variable="rest.w"></slider>
+    <monitor x="212" precision="2" y="423" height="60" fontSize="11" width="100" display="L/s">max.sustained.speed / fish.size</monitor>
+    <slider x="15" step="0.1" y="492" max="10" width="190" display="burst.speed" height="50" min="0" direction="Horizontal" default="2.6" variable="burst.speed" units="m/s"></slider>
+    <monitor x="210" precision="1" y="488" height="60" fontSize="11" width="100" display="L/s">burst.speed / fish.size</monitor>
+    <slider x="250" step="1" y="876" max="10" width="172" display="cruise.w" height="50" min="0" direction="Horizontal" default="0.0" variable="cruise.w"></slider>
+    <chooser x="425" y="170" height="60" variable="csv.delimiter" current="0" width="100" display="csv.delimiter">
+      <choice type="string" value=","></choice>
+      <choice type="string" value=";"></choice>
+    </chooser>
+    <button x="445" y="345" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="80" display="paint fishes">ask fishes [set color fish.color]</button>
+    <note x="195" y="1018" backgroundDark="0" fontSize="11" width="55" markdown="false" height="40" textColorDark="-1" textColorLight="-2674135" backgroundLight="0">set to negative if attracted</note>
+    <button x="470" y="1008" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55" display="STOP">set recording FALSE
+vid:save-recording _recording-save-file-name
+user-message (word "Done! Video file " _recording-save-file-name ".mp4 can be found on the root folder.")</button>
+    <button x="410" y="1132" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55" display="REC">set _recording-save-file-name user-input "Pick a name for the movie file (exclude extension). Any file with the same name will be overwritten!"
+vid:start-recorder
+user-message "Press OK to start recording, press STOP on the video recorder when done."
+set recording true</button>
+    <note x="300" y="1147" backgroundDark="0" fontSize="12" width="105" markdown="false" height="18" textColorDark="-1" textColorLight="-2674135" backgroundLight="0">VIDEO RECORDER</note>
+    <note x="435" y="766" backgroundDark="0" fontSize="11" width="80" markdown="false" height="75" textColorDark="-1" textColorLight="-2674135" backgroundLight="0">Always save as a behavior after changes in this section!</note>
+    <note x="480" y="1108" backgroundDark="0" fontSize="11" width="115" markdown="false" height="70" textColorDark="-1" textColorLight="-2674135" backgroundLight="0">This behavior is used to initialize the census model. Pick the most common or typical.</note>
+    <input x="260" multiline="false" y="345" height="60" variable="fish.color" type="color" width="180">9.9</input>
+    <chooser x="317" y="410" height="60" variable="prey.type" current="0" width="210" display="prey.type">
+      <choice type="string" value="benthic"></choice>
+      <choice type="string" value="fish"></choice>
+    </chooser>
+    <button x="260" y="610" height="45" disableUntilTicks="false" forever="false" kind="Observer" width="130">setup</button>
+    <button x="400" y="610" height="45" disableUntilTicks="false" forever="true" kind="Observer" width="130">go</button>
+    <button x="430" y="530" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="101" display="Estimate">estimate-speeds</button>
+    <input x="315" multiline="false" y="530" height="60" variable="aspect.ratio" type="number" width="110">3.0</input>
+  </widgets>
+  <info>##WHAT IS IT##
+
+This model is used to create "species" of fish and export them as csv files to import into the FishCensus.nlogo model.
+
+## COPYRIGHT AND LICENSE
+
+Copyright 2016 Miguel Pessanha Pais
+
+![CC BY-NC-SA 3.0](http://ccl.northwestern.edu/images/creativecommons/byncsa.png)
+
+This work is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.  To view a copy of this license, visit http://creativecommons.org/licenses/by-nc-sa/4.0/</info>
+  <turtleShapes>
+    <shape name="default" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="5"></point>
+        <point x="40" y="250"></point>
+        <point x="150" y="205"></point>
+        <point x="260" y="250"></point>
+      </polygon>
+    </shape>
+    <shape name="airplane" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="0"></point>
+        <point x="135" y="15"></point>
+        <point x="120" y="60"></point>
+        <point x="120" y="105"></point>
+        <point x="15" y="165"></point>
+        <point x="15" y="195"></point>
+        <point x="120" y="180"></point>
+        <point x="135" y="240"></point>
+        <point x="105" y="270"></point>
+        <point x="120" y="285"></point>
+        <point x="150" y="270"></point>
+        <point x="180" y="285"></point>
+        <point x="210" y="270"></point>
+        <point x="165" y="240"></point>
+        <point x="180" y="180"></point>
+        <point x="285" y="195"></point>
+        <point x="285" y="165"></point>
+        <point x="180" y="105"></point>
+        <point x="180" y="60"></point>
+        <point x="165" y="15"></point>
+      </polygon>
+    </shape>
+    <shape name="arrow" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="0"></point>
+        <point x="0" y="150"></point>
+        <point x="105" y="150"></point>
+        <point x="105" y="293"></point>
+        <point x="195" y="293"></point>
+        <point x="195" y="150"></point>
+        <point x="300" y="150"></point>
+      </polygon>
+    </shape>
+    <shape name="box" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="285"></point>
+        <point x="285" y="225"></point>
+        <point x="285" y="75"></point>
+        <point x="150" y="135"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="135"></point>
+        <point x="15" y="75"></point>
+        <point x="150" y="15"></point>
+        <point x="285" y="75"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="15" y="75"></point>
+        <point x="15" y="225"></point>
+        <point x="150" y="285"></point>
+        <point x="150" y="135"></point>
+      </polygon>
+      <line endX="150" startY="285" marked="false" color="255" endY="135" startX="150"></line>
+      <line endX="15" startY="135" marked="false" color="255" endY="75" startX="150"></line>
+      <line endX="285" startY="135" marked="false" color="255" endY="75" startX="150"></line>
+    </shape>
+    <shape name="bug" rotatable="true" editableColorIndex="0">
+      <circle x="96" y="182" marked="true" color="-1920102913" diameter="108" filled="true"></circle>
+      <circle x="110" y="127" marked="true" color="-1920102913" diameter="80" filled="true"></circle>
+      <circle x="110" y="75" marked="true" color="-1920102913" diameter="80" filled="true"></circle>
+      <line endX="80" startY="100" marked="true" color="-1920102913" endY="30" startX="150"></line>
+      <line endX="220" startY="100" marked="true" color="-1920102913" endY="30" startX="150"></line>
+    </shape>
+    <shape name="butterfly" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="165"></point>
+        <point x="209" y="199"></point>
+        <point x="225" y="225"></point>
+        <point x="225" y="255"></point>
+        <point x="195" y="270"></point>
+        <point x="165" y="255"></point>
+        <point x="150" y="240"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="165"></point>
+        <point x="89" y="198"></point>
+        <point x="75" y="225"></point>
+        <point x="75" y="255"></point>
+        <point x="105" y="270"></point>
+        <point x="135" y="255"></point>
+        <point x="150" y="240"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="139" y="148"></point>
+        <point x="100" y="105"></point>
+        <point x="55" y="90"></point>
+        <point x="25" y="90"></point>
+        <point x="10" y="105"></point>
+        <point x="10" y="135"></point>
+        <point x="25" y="180"></point>
+        <point x="40" y="195"></point>
+        <point x="85" y="194"></point>
+        <point x="139" y="163"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="162" y="150"></point>
+        <point x="200" y="105"></point>
+        <point x="245" y="90"></point>
+        <point x="275" y="90"></point>
+        <point x="290" y="105"></point>
+        <point x="290" y="135"></point>
+        <point x="275" y="180"></point>
+        <point x="260" y="195"></point>
+        <point x="215" y="195"></point>
+        <point x="162" y="165"></point>
+      </polygon>
+      <polygon color="255" filled="true" marked="false">
+        <point x="150" y="255"></point>
+        <point x="135" y="225"></point>
+        <point x="120" y="150"></point>
+        <point x="135" y="120"></point>
+        <point x="150" y="105"></point>
+        <point x="165" y="120"></point>
+        <point x="180" y="150"></point>
+        <point x="165" y="225"></point>
+      </polygon>
+      <circle x="135" y="90" marked="false" color="255" diameter="30" filled="true"></circle>
+      <line endX="195" startY="105" marked="false" color="255" endY="60" startX="150"></line>
+      <line endX="105" startY="105" marked="false" color="255" endY="60" startX="150"></line>
+    </shape>
+    <shape name="car" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="300" y="180"></point>
+        <point x="279" y="164"></point>
+        <point x="261" y="144"></point>
+        <point x="240" y="135"></point>
+        <point x="226" y="132"></point>
+        <point x="213" y="106"></point>
+        <point x="203" y="84"></point>
+        <point x="185" y="63"></point>
+        <point x="159" y="50"></point>
+        <point x="135" y="50"></point>
+        <point x="75" y="60"></point>
+        <point x="0" y="150"></point>
+        <point x="0" y="165"></point>
+        <point x="0" y="225"></point>
+        <point x="300" y="225"></point>
+        <point x="300" y="180"></point>
+      </polygon>
+      <circle x="180" y="180" marked="false" color="255" diameter="90" filled="true"></circle>
+      <circle x="30" y="180" marked="false" color="255" diameter="90" filled="true"></circle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="162" y="80"></point>
+        <point x="132" y="78"></point>
+        <point x="134" y="135"></point>
+        <point x="209" y="135"></point>
+        <point x="194" y="105"></point>
+        <point x="189" y="96"></point>
+        <point x="180" y="89"></point>
+      </polygon>
+      <circle x="47" y="195" marked="true" color="-1920102913" diameter="58" filled="true"></circle>
+      <circle x="195" y="195" marked="true" color="-1920102913" diameter="58" filled="true"></circle>
+    </shape>
+    <shape name="circle" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+    </shape>
+    <shape name="circle 2" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+      <circle x="30" y="30" marked="false" color="255" diameter="240" filled="true"></circle>
+    </shape>
+    <shape name="cow" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="200" y="193"></point>
+        <point x="197" y="249"></point>
+        <point x="179" y="249"></point>
+        <point x="177" y="196"></point>
+        <point x="166" y="187"></point>
+        <point x="140" y="189"></point>
+        <point x="93" y="191"></point>
+        <point x="78" y="179"></point>
+        <point x="72" y="211"></point>
+        <point x="49" y="209"></point>
+        <point x="48" y="181"></point>
+        <point x="37" y="149"></point>
+        <point x="25" y="120"></point>
+        <point x="25" y="89"></point>
+        <point x="45" y="72"></point>
+        <point x="103" y="84"></point>
+        <point x="179" y="75"></point>
+        <point x="198" y="76"></point>
+        <point x="252" y="64"></point>
+        <point x="272" y="81"></point>
+        <point x="293" y="103"></point>
+        <point x="285" y="121"></point>
+        <point x="255" y="121"></point>
+        <point x="242" y="118"></point>
+        <point x="224" y="167"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="73" y="210"></point>
+        <point x="86" y="251"></point>
+        <point x="62" y="249"></point>
+        <point x="48" y="208"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="25" y="114"></point>
+        <point x="16" y="195"></point>
+        <point x="9" y="204"></point>
+        <point x="23" y="213"></point>
+        <point x="25" y="200"></point>
+        <point x="39" y="123"></point>
+      </polygon>
+    </shape>
+    <shape name="cylinder" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+    </shape>
+    <shape name="diver" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="105" y="90"></point>
+        <point x="120" y="180"></point>
+        <point x="120" y="270"></point>
+        <point x="105" y="300"></point>
+        <point x="135" y="300"></point>
+        <point x="150" y="210"></point>
+        <point x="165" y="300"></point>
+        <point x="195" y="300"></point>
+        <point x="180" y="270"></point>
+        <point x="180" y="180"></point>
+        <point x="195" y="90"></point>
+      </polygon>
+      <rectangle endX="165" startY="75" marked="true" color="-1920102913" endY="90" startX="135" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="180" y="120"></point>
+        <point x="195" y="30"></point>
+        <point x="210" y="45"></point>
+        <point x="210" y="105"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="120" y="120"></point>
+        <point x="105" y="30"></point>
+        <point x="90" y="45"></point>
+        <point x="90" y="105"></point>
+      </polygon>
+      <rectangle endX="165" startY="90" marked="false" color="-303222273" endY="195" startX="135" filled="true"></rectangle>
+      <circle x="120" y="30" marked="false" color="255" diameter="60" filled="true"></circle>
+    </shape>
+    <shape name="dot" rotatable="false" editableColorIndex="0">
+      <circle x="90" y="90" marked="true" color="-1920102913" diameter="120" filled="true"></circle>
+    </shape>
+    <shape name="face happy" rotatable="false" editableColorIndex="0">
+      <circle x="8" y="8" marked="true" color="-1920102913" diameter="285" filled="true"></circle>
+      <circle x="60" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <circle x="180" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="150" y="255"></point>
+        <point x="90" y="239"></point>
+        <point x="62" y="213"></point>
+        <point x="47" y="191"></point>
+        <point x="67" y="179"></point>
+        <point x="90" y="203"></point>
+        <point x="109" y="218"></point>
+        <point x="150" y="225"></point>
+        <point x="192" y="218"></point>
+        <point x="210" y="203"></point>
+        <point x="227" y="181"></point>
+        <point x="251" y="194"></point>
+        <point x="236" y="217"></point>
+        <point x="212" y="240"></point>
+      </polygon>
+    </shape>
+    <shape name="face neutral" rotatable="false" editableColorIndex="0">
+      <circle x="8" y="7" marked="true" color="-1920102913" diameter="285" filled="true"></circle>
+      <circle x="60" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <circle x="180" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <rectangle endX="240" startY="195" marked="false" color="255" endY="225" startX="60" filled="true"></rectangle>
+    </shape>
+    <shape name="face sad" rotatable="false" editableColorIndex="0">
+      <circle x="8" y="8" marked="true" color="-1920102913" diameter="285" filled="true"></circle>
+      <circle x="60" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <circle x="180" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="150" y="168"></point>
+        <point x="90" y="184"></point>
+        <point x="62" y="210"></point>
+        <point x="47" y="232"></point>
+        <point x="67" y="244"></point>
+        <point x="90" y="220"></point>
+        <point x="109" y="205"></point>
+        <point x="150" y="198"></point>
+        <point x="192" y="205"></point>
+        <point x="210" y="220"></point>
+        <point x="227" y="242"></point>
+        <point x="251" y="229"></point>
+        <point x="236" y="206"></point>
+        <point x="212" y="183"></point>
+      </polygon>
+    </shape>
+    <shape name="fish" rotatable="false" editableColorIndex="0">
+      <polygon color="-1" filled="true" marked="false">
+        <point x="44" y="131"></point>
+        <point x="21" y="87"></point>
+        <point x="15" y="86"></point>
+        <point x="0" y="120"></point>
+        <point x="15" y="150"></point>
+        <point x="0" y="180"></point>
+        <point x="13" y="214"></point>
+        <point x="20" y="212"></point>
+        <point x="45" y="166"></point>
+      </polygon>
+      <polygon color="-1" filled="true" marked="false">
+        <point x="135" y="195"></point>
+        <point x="119" y="235"></point>
+        <point x="95" y="218"></point>
+        <point x="76" y="210"></point>
+        <point x="46" y="204"></point>
+        <point x="60" y="165"></point>
+      </polygon>
+      <polygon color="-1" filled="true" marked="false">
+        <point x="75" y="45"></point>
+        <point x="83" y="77"></point>
+        <point x="71" y="103"></point>
+        <point x="86" y="114"></point>
+        <point x="166" y="78"></point>
+        <point x="135" y="60"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="30" y="136"></point>
+        <point x="151" y="77"></point>
+        <point x="226" y="81"></point>
+        <point x="280" y="119"></point>
+        <point x="292" y="146"></point>
+        <point x="292" y="160"></point>
+        <point x="287" y="170"></point>
+        <point x="270" y="195"></point>
+        <point x="195" y="210"></point>
+        <point x="151" y="212"></point>
+        <point x="30" y="166"></point>
+      </polygon>
+      <circle x="215" y="106" marked="false" color="255" diameter="30" filled="true"></circle>
+    </shape>
+    <shape name="fish rotate" rotatable="true" editableColorIndex="0">
+      <polygon color="-1" filled="true" marked="false">
+        <point x="131" y="256"></point>
+        <point x="87" y="279"></point>
+        <point x="86" y="285"></point>
+        <point x="120" y="300"></point>
+        <point x="150" y="285"></point>
+        <point x="180" y="300"></point>
+        <point x="214" y="287"></point>
+        <point x="212" y="280"></point>
+        <point x="166" y="255"></point>
+      </polygon>
+      <polygon color="-1" filled="true" marked="false">
+        <point x="195" y="165"></point>
+        <point x="235" y="181"></point>
+        <point x="218" y="205"></point>
+        <point x="210" y="224"></point>
+        <point x="204" y="254"></point>
+        <point x="165" y="240"></point>
+      </polygon>
+      <polygon color="-1" filled="true" marked="false">
+        <point x="45" y="225"></point>
+        <point x="77" y="217"></point>
+        <point x="103" y="229"></point>
+        <point x="114" y="214"></point>
+        <point x="78" y="134"></point>
+        <point x="60" y="165"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="136" y="270"></point>
+        <point x="77" y="149"></point>
+        <point x="81" y="74"></point>
+        <point x="119" y="20"></point>
+        <point x="146" y="8"></point>
+        <point x="160" y="8"></point>
+        <point x="170" y="13"></point>
+        <point x="195" y="30"></point>
+        <point x="210" y="105"></point>
+        <point x="212" y="149"></point>
+        <point x="166" y="270"></point>
+      </polygon>
+      <circle x="106" y="55" marked="false" color="255" diameter="30" filled="true"></circle>
+    </shape>
+    <shape name="fish top" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="157" y="1"></point>
+        <point x="142" y="1"></point>
+        <point x="104" y="45"></point>
+        <point x="104" y="75"></point>
+        <point x="89" y="120"></point>
+        <point x="104" y="120"></point>
+        <point x="117" y="191"></point>
+        <point x="137" y="243"></point>
+        <point x="147" y="304"></point>
+        <point x="181" y="240"></point>
+        <point x="184" y="189"></point>
+        <point x="194" y="120"></point>
+        <point x="209" y="120"></point>
+        <point x="194" y="75"></point>
+        <point x="194" y="45"></point>
+      </polygon>
+    </shape>
+    <shape name="flag" rotatable="false" editableColorIndex="0">
+      <rectangle endX="75" startY="15" marked="true" color="-1920102913" endY="300" startX="60" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="90" y="150"></point>
+        <point x="270" y="90"></point>
+        <point x="90" y="30"></point>
+      </polygon>
+      <line endX="90" startY="135" marked="true" color="-1920102913" endY="135" startX="75"></line>
+      <line endX="90" startY="45" marked="true" color="-1920102913" endY="45" startX="75"></line>
+    </shape>
+    <shape name="flower" rotatable="false" editableColorIndex="0">
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="135" y="120"></point>
+        <point x="165" y="165"></point>
+        <point x="180" y="210"></point>
+        <point x="180" y="240"></point>
+        <point x="150" y="300"></point>
+        <point x="165" y="300"></point>
+        <point x="195" y="240"></point>
+        <point x="195" y="195"></point>
+        <point x="165" y="135"></point>
+      </polygon>
+      <circle x="85" y="132" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="130" y="147" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="192" y="85" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="85" y="40" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="177" y="40" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="177" y="132" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="70" y="85" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="130" y="25" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="96" y="51" marked="true" color="-1920102913" diameter="108" filled="true"></circle>
+      <circle x="113" y="68" marked="false" color="255" diameter="74" filled="true"></circle>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="189" y="233"></point>
+        <point x="219" y="188"></point>
+        <point x="249" y="173"></point>
+        <point x="279" y="188"></point>
+        <point x="234" y="218"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="180" y="255"></point>
+        <point x="150" y="210"></point>
+        <point x="105" y="210"></point>
+        <point x="75" y="240"></point>
+        <point x="135" y="240"></point>
+      </polygon>
+    </shape>
+    <shape name="house" rotatable="false" editableColorIndex="0">
+      <rectangle endX="255" startY="120" marked="true" color="-1920102913" endY="285" startX="45" filled="true"></rectangle>
+      <rectangle endX="180" startY="210" marked="false" color="255" endY="285" startX="120" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="15" y="120"></point>
+        <point x="150" y="15"></point>
+        <point x="285" y="120"></point>
+      </polygon>
+      <line endX="270" startY="120" marked="false" color="255" endY="120" startX="30"></line>
+    </shape>
+    <shape name="leaf" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="210"></point>
+        <point x="135" y="195"></point>
+        <point x="120" y="210"></point>
+        <point x="60" y="210"></point>
+        <point x="30" y="195"></point>
+        <point x="60" y="180"></point>
+        <point x="60" y="165"></point>
+        <point x="15" y="135"></point>
+        <point x="30" y="120"></point>
+        <point x="15" y="105"></point>
+        <point x="40" y="104"></point>
+        <point x="45" y="90"></point>
+        <point x="60" y="90"></point>
+        <point x="90" y="105"></point>
+        <point x="105" y="120"></point>
+        <point x="120" y="120"></point>
+        <point x="105" y="60"></point>
+        <point x="120" y="60"></point>
+        <point x="135" y="30"></point>
+        <point x="150" y="15"></point>
+        <point x="165" y="30"></point>
+        <point x="180" y="60"></point>
+        <point x="195" y="60"></point>
+        <point x="180" y="120"></point>
+        <point x="195" y="120"></point>
+        <point x="210" y="105"></point>
+        <point x="240" y="90"></point>
+        <point x="255" y="90"></point>
+        <point x="263" y="104"></point>
+        <point x="285" y="105"></point>
+        <point x="270" y="120"></point>
+        <point x="285" y="135"></point>
+        <point x="240" y="165"></point>
+        <point x="240" y="180"></point>
+        <point x="270" y="195"></point>
+        <point x="240" y="210"></point>
+        <point x="180" y="210"></point>
+        <point x="165" y="195"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="195"></point>
+        <point x="135" y="240"></point>
+        <point x="120" y="255"></point>
+        <point x="105" y="255"></point>
+        <point x="105" y="285"></point>
+        <point x="135" y="285"></point>
+        <point x="165" y="240"></point>
+        <point x="165" y="195"></point>
+      </polygon>
+    </shape>
+    <shape name="line" rotatable="true" editableColorIndex="0">
+      <line endX="150" startY="0" marked="true" color="-1920102913" endY="300" startX="150"></line>
+    </shape>
+    <shape name="line half" rotatable="true" editableColorIndex="0">
+      <line endX="150" startY="0" marked="true" color="-1920102913" endY="150" startX="150"></line>
+    </shape>
+    <shape name="pentagon" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="15"></point>
+        <point x="15" y="120"></point>
+        <point x="60" y="285"></point>
+        <point x="240" y="285"></point>
+        <point x="285" y="120"></point>
+      </polygon>
+    </shape>
+    <shape name="person" rotatable="false" editableColorIndex="0">
+      <circle x="110" y="5" marked="true" color="-1920102913" diameter="80" filled="true"></circle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="105" y="90"></point>
+        <point x="120" y="195"></point>
+        <point x="90" y="285"></point>
+        <point x="105" y="300"></point>
+        <point x="135" y="300"></point>
+        <point x="150" y="225"></point>
+        <point x="165" y="300"></point>
+        <point x="195" y="300"></point>
+        <point x="210" y="285"></point>
+        <point x="180" y="195"></point>
+        <point x="195" y="90"></point>
+      </polygon>
+      <rectangle endX="172" startY="79" marked="true" color="-1920102913" endY="94" startX="127" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="195" y="90"></point>
+        <point x="240" y="150"></point>
+        <point x="225" y="180"></point>
+        <point x="165" y="105"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="105" y="90"></point>
+        <point x="60" y="150"></point>
+        <point x="75" y="180"></point>
+        <point x="135" y="105"></point>
+      </polygon>
+    </shape>
+    <shape name="plant" rotatable="false" editableColorIndex="0">
+      <rectangle endX="165" startY="90" marked="true" color="-1920102913" endY="300" startX="135" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="255"></point>
+        <point x="90" y="210"></point>
+        <point x="45" y="195"></point>
+        <point x="75" y="255"></point>
+        <point x="135" y="285"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="255"></point>
+        <point x="210" y="210"></point>
+        <point x="255" y="195"></point>
+        <point x="225" y="255"></point>
+        <point x="165" y="285"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="180"></point>
+        <point x="90" y="135"></point>
+        <point x="45" y="120"></point>
+        <point x="75" y="180"></point>
+        <point x="135" y="210"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="180"></point>
+        <point x="165" y="210"></point>
+        <point x="225" y="180"></point>
+        <point x="255" y="120"></point>
+        <point x="210" y="135"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="105"></point>
+        <point x="90" y="60"></point>
+        <point x="45" y="45"></point>
+        <point x="75" y="105"></point>
+        <point x="135" y="135"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="105"></point>
+        <point x="165" y="135"></point>
+        <point x="225" y="105"></point>
+        <point x="255" y="45"></point>
+        <point x="210" y="60"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="90"></point>
+        <point x="120" y="45"></point>
+        <point x="150" y="15"></point>
+        <point x="180" y="45"></point>
+        <point x="165" y="90"></point>
+      </polygon>
+    </shape>
+    <shape name="sheep" rotatable="false" editableColorIndex="15">
+      <circle x="203" y="65" marked="true" color="-1" diameter="88" filled="true"></circle>
+      <circle x="70" y="65" marked="true" color="-1" diameter="162" filled="true"></circle>
+      <circle x="150" y="105" marked="true" color="-1" diameter="120" filled="true"></circle>
+      <polygon color="-1920102913" filled="true" marked="false">
+        <point x="218" y="120"></point>
+        <point x="240" y="165"></point>
+        <point x="255" y="165"></point>
+        <point x="278" y="120"></point>
+      </polygon>
+      <circle x="214" y="72" marked="false" color="-1920102913" diameter="67" filled="true"></circle>
+      <rectangle endX="179" startY="223" marked="true" color="-1" endY="298" startX="164" filled="true"></rectangle>
+      <polygon color="-1" filled="true" marked="true">
+        <point x="45" y="285"></point>
+        <point x="30" y="285"></point>
+        <point x="30" y="240"></point>
+        <point x="15" y="195"></point>
+        <point x="45" y="210"></point>
+      </polygon>
+      <circle x="3" y="83" marked="true" color="-1" diameter="150" filled="true"></circle>
+      <rectangle endX="80" startY="221" marked="true" color="-1" endY="296" startX="65" filled="true"></rectangle>
+      <polygon color="-1" filled="true" marked="true">
+        <point x="195" y="285"></point>
+        <point x="210" y="285"></point>
+        <point x="210" y="240"></point>
+        <point x="240" y="210"></point>
+        <point x="195" y="210"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="false">
+        <point x="276" y="85"></point>
+        <point x="285" y="105"></point>
+        <point x="302" y="99"></point>
+        <point x="294" y="83"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="false">
+        <point x="219" y="85"></point>
+        <point x="210" y="105"></point>
+        <point x="193" y="99"></point>
+        <point x="201" y="83"></point>
+      </polygon>
+    </shape>
+    <shape name="square" rotatable="false" editableColorIndex="0">
+      <rectangle endX="270" startY="30" marked="true" color="-1920102913" endY="270" startX="30" filled="true"></rectangle>
+    </shape>
+    <shape name="square 2" rotatable="false" editableColorIndex="0">
+      <rectangle endX="270" startY="30" marked="true" color="-1920102913" endY="270" startX="30" filled="true"></rectangle>
+      <rectangle endX="240" startY="60" marked="false" color="255" endY="240" startX="60" filled="true"></rectangle>
+    </shape>
+    <shape name="star" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="151" y="1"></point>
+        <point x="185" y="108"></point>
+        <point x="298" y="108"></point>
+        <point x="207" y="175"></point>
+        <point x="242" y="282"></point>
+        <point x="151" y="216"></point>
+        <point x="59" y="282"></point>
+        <point x="94" y="175"></point>
+        <point x="3" y="108"></point>
+        <point x="116" y="108"></point>
+      </polygon>
+    </shape>
+    <shape name="target" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+      <circle x="30" y="30" marked="false" color="255" diameter="240" filled="true"></circle>
+      <circle x="60" y="60" marked="true" color="-1920102913" diameter="180" filled="true"></circle>
+      <circle x="90" y="90" marked="false" color="255" diameter="120" filled="true"></circle>
+      <circle x="120" y="120" marked="true" color="-1920102913" diameter="60" filled="true"></circle>
+    </shape>
+    <shape name="tree" rotatable="false" editableColorIndex="0">
+      <circle x="118" y="3" marked="true" color="-1920102913" diameter="94" filled="true"></circle>
+      <rectangle endX="180" startY="195" marked="false" color="-1653716737" endY="300" startX="120" filled="true"></rectangle>
+      <circle x="65" y="21" marked="true" color="-1920102913" diameter="108" filled="true"></circle>
+      <circle x="116" y="41" marked="true" color="-1920102913" diameter="127" filled="true"></circle>
+      <circle x="45" y="90" marked="true" color="-1920102913" diameter="120" filled="true"></circle>
+      <circle x="104" y="74" marked="true" color="-1920102913" diameter="152" filled="true"></circle>
+    </shape>
+    <shape name="triangle" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="30"></point>
+        <point x="15" y="255"></point>
+        <point x="285" y="255"></point>
+      </polygon>
+    </shape>
+    <shape name="triangle 2" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="30"></point>
+        <point x="15" y="255"></point>
+        <point x="285" y="255"></point>
+      </polygon>
+      <polygon color="255" filled="true" marked="false">
+        <point x="151" y="99"></point>
+        <point x="225" y="223"></point>
+        <point x="75" y="224"></point>
+      </polygon>
+    </shape>
+    <shape name="truck" rotatable="false" editableColorIndex="0">
+      <rectangle endX="195" startY="45" marked="true" color="-1920102913" endY="187" startX="4" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="296" y="193"></point>
+        <point x="296" y="150"></point>
+        <point x="259" y="134"></point>
+        <point x="244" y="104"></point>
+        <point x="208" y="104"></point>
+        <point x="207" y="194"></point>
+      </polygon>
+      <rectangle endX="195" startY="60" marked="false" color="-1" endY="105" startX="195" filled="true"></rectangle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="238" y="112"></point>
+        <point x="252" y="141"></point>
+        <point x="219" y="141"></point>
+        <point x="218" y="112"></point>
+      </polygon>
+      <circle x="234" y="174" marked="false" color="255" diameter="42" filled="true"></circle>
+      <rectangle endX="214" startY="185" marked="true" color="-1920102913" endY="194" startX="181" filled="true"></rectangle>
+      <circle x="144" y="174" marked="false" color="255" diameter="42" filled="true"></circle>
+      <circle x="24" y="174" marked="false" color="255" diameter="42" filled="true"></circle>
+      <circle x="24" y="174" marked="true" color="-1920102913" diameter="42" filled="false"></circle>
+      <circle x="144" y="174" marked="true" color="-1920102913" diameter="42" filled="false"></circle>
+      <circle x="234" y="174" marked="true" color="-1920102913" diameter="42" filled="false"></circle>
+    </shape>
+    <shape name="turtle" rotatable="true" editableColorIndex="0">
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="215" y="204"></point>
+        <point x="240" y="233"></point>
+        <point x="246" y="254"></point>
+        <point x="228" y="266"></point>
+        <point x="215" y="252"></point>
+        <point x="193" y="210"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="195" y="90"></point>
+        <point x="225" y="75"></point>
+        <point x="245" y="75"></point>
+        <point x="260" y="89"></point>
+        <point x="269" y="108"></point>
+        <point x="261" y="124"></point>
+        <point x="240" y="105"></point>
+        <point x="225" y="105"></point>
+        <point x="210" y="105"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="105" y="90"></point>
+        <point x="75" y="75"></point>
+        <point x="55" y="75"></point>
+        <point x="40" y="89"></point>
+        <point x="31" y="108"></point>
+        <point x="39" y="124"></point>
+        <point x="60" y="105"></point>
+        <point x="75" y="105"></point>
+        <point x="90" y="105"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="132" y="85"></point>
+        <point x="134" y="64"></point>
+        <point x="107" y="51"></point>
+        <point x="108" y="17"></point>
+        <point x="150" y="2"></point>
+        <point x="192" y="18"></point>
+        <point x="192" y="52"></point>
+        <point x="169" y="65"></point>
+        <point x="172" y="87"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="85" y="204"></point>
+        <point x="60" y="233"></point>
+        <point x="54" y="254"></point>
+        <point x="72" y="266"></point>
+        <point x="85" y="252"></point>
+        <point x="107" y="210"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="119" y="75"></point>
+        <point x="179" y="75"></point>
+        <point x="209" y="101"></point>
+        <point x="224" y="135"></point>
+        <point x="220" y="225"></point>
+        <point x="175" y="261"></point>
+        <point x="128" y="261"></point>
+        <point x="81" y="224"></point>
+        <point x="74" y="135"></point>
+        <point x="88" y="99"></point>
+      </polygon>
+    </shape>
+    <shape name="wheel" rotatable="false" editableColorIndex="0">
+      <circle x="3" y="3" marked="true" color="-1920102913" diameter="294" filled="true"></circle>
+      <circle x="30" y="30" marked="false" color="255" diameter="240" filled="true"></circle>
+      <line endX="150" startY="285" marked="true" color="-1920102913" endY="15" startX="150"></line>
+      <line endX="285" startY="150" marked="true" color="-1920102913" endY="150" startX="15"></line>
+      <circle x="120" y="120" marked="true" color="-1920102913" diameter="60" filled="true"></circle>
+      <line endX="79" startY="40" marked="true" color="-1920102913" endY="269" startX="216"></line>
+      <line endX="269" startY="84" marked="true" color="-1920102913" endY="221" startX="40"></line>
+      <line endX="269" startY="216" marked="true" color="-1920102913" endY="79" startX="40"></line>
+      <line endX="221" startY="40" marked="true" color="-1920102913" endY="269" startX="84"></line>
+    </shape>
+    <shape name="wolf" rotatable="false" editableColorIndex="0">
+      <polygon color="255" filled="true" marked="false">
+        <point x="253" y="133"></point>
+        <point x="245" y="131"></point>
+        <point x="245" y="133"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="2" y="194"></point>
+        <point x="13" y="197"></point>
+        <point x="30" y="191"></point>
+        <point x="38" y="193"></point>
+        <point x="38" y="205"></point>
+        <point x="20" y="226"></point>
+        <point x="20" y="257"></point>
+        <point x="27" y="265"></point>
+        <point x="38" y="266"></point>
+        <point x="40" y="260"></point>
+        <point x="31" y="253"></point>
+        <point x="31" y="230"></point>
+        <point x="60" y="206"></point>
+        <point x="68" y="198"></point>
+        <point x="75" y="209"></point>
+        <point x="66" y="228"></point>
+        <point x="65" y="243"></point>
+        <point x="82" y="261"></point>
+        <point x="84" y="268"></point>
+        <point x="100" y="267"></point>
+        <point x="103" y="261"></point>
+        <point x="77" y="239"></point>
+        <point x="79" y="231"></point>
+        <point x="100" y="207"></point>
+        <point x="98" y="196"></point>
+        <point x="119" y="201"></point>
+        <point x="143" y="202"></point>
+        <point x="160" y="195"></point>
+        <point x="166" y="210"></point>
+        <point x="172" y="213"></point>
+        <point x="173" y="238"></point>
+        <point x="167" y="251"></point>
+        <point x="160" y="248"></point>
+        <point x="154" y="265"></point>
+        <point x="169" y="264"></point>
+        <point x="178" y="247"></point>
+        <point x="186" y="240"></point>
+        <point x="198" y="260"></point>
+        <point x="200" y="271"></point>
+        <point x="217" y="271"></point>
+        <point x="219" y="262"></point>
+        <point x="207" y="258"></point>
+        <point x="195" y="230"></point>
+        <point x="192" y="198"></point>
+        <point x="210" y="184"></point>
+        <point x="227" y="164"></point>
+        <point x="242" y="144"></point>
+        <point x="259" y="145"></point>
+        <point x="284" y="151"></point>
+        <point x="277" y="141"></point>
+        <point x="293" y="140"></point>
+        <point x="299" y="134"></point>
+        <point x="297" y="127"></point>
+        <point x="273" y="119"></point>
+        <point x="270" y="105"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="-1" y="195"></point>
+        <point x="14" y="180"></point>
+        <point x="36" y="166"></point>
+        <point x="40" y="153"></point>
+        <point x="53" y="140"></point>
+        <point x="82" y="131"></point>
+        <point x="134" y="133"></point>
+        <point x="159" y="126"></point>
+        <point x="188" y="115"></point>
+        <point x="227" y="108"></point>
+        <point x="236" y="102"></point>
+        <point x="238" y="98"></point>
+        <point x="268" y="86"></point>
+        <point x="269" y="92"></point>
+        <point x="281" y="87"></point>
+        <point x="269" y="103"></point>
+        <point x="269" y="113"></point>
+      </polygon>
+    </shape>
+    <shape name="x" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="270" y="75"></point>
+        <point x="225" y="30"></point>
+        <point x="30" y="225"></point>
+        <point x="75" y="270"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="30" y="75"></point>
+        <point x="75" y="30"></point>
+        <point x="270" y="225"></point>
+        <point x="225" y="270"></point>
+      </polygon>
+    </shape>
+  </turtleShapes>
+  <linkShapes>
+    <shape name="default" curviness="0.0">
+      <lines>
+        <line x="-0.2" visible="false">
+          <dash value="0.0"></dash>
+          <dash value="1.0"></dash>
+        </line>
+        <line x="0.0" visible="true">
+          <dash value="1.0"></dash>
+          <dash value="0.0"></dash>
+        </line>
+        <line x="0.2" visible="false">
+          <dash value="0.0"></dash>
+          <dash value="1.0"></dash>
+        </line>
+      </lines>
+      <indicator>
+        <shape name="link direction" rotatable="true" editableColorIndex="0">
+          <line endX="90" startY="150" marked="true" color="-1920102913" endY="180" startX="150"></line>
+          <line endX="210" startY="150" marked="true" color="-1920102913" endY="180" startX="150"></line>
+        </shape>
+      </indicator>
+    </shape>
+  </linkShapes>
+  <previewCommands>setup repeat 75 [ go ]</previewCommands>
+</model>
