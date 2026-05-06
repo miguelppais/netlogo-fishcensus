@@ -1,0 +1,87 @@
+Starting NetLogo profiler...
+Reading species file...
+Importing species data...
+Building the simulation environment...
+Loading sampling method settings...
+Placing fishes...
+Imported 480 fishes belonging to 1 species,
+with a total density of 0.3 fish per square meter.
+Running fish movement algorithm for 30 model seconds to set initial positions...
+Placing diver...
+Density estimates:
+Schooling: 0.867
+Bias due to non-instantaneous sampling:
+Schooling: 0.3
+Debug mode was on: Writing NetLogo profiler report...
+Inclusive time: Time (s) to run a procedure, including all other procedures it may call.
+Exclusive time: Time (s) to run a procedure, excluding all other procedures it may call.
+BEGIN PROFILING DUMP
+Sorted by Exclusive Time
+Name                               Calls Incl T(ms) Excl T(ms) Excl/calls
+DO.FISH.MOVEMENT                  691200  36810,400  23741,378      0,034
+GO                                   115  40426,531   9905,168     86,132
+MAGNITUDE                        8385438   2606,980   2606,980      0,000
+NORMALIZE                        5163666   3099,060   1561,780      0,000
+AVOID-PREDATOR-URGE               691200   1493,760   1493,760      0,002
+ADD                              5224939   1422,592   1422,592      0,000
+SCALE                            5163174   1350,911   1350,911      0,000
+ADD-URGE                         3621680   5321,158   1214,804      0,000
+ALIGN-URGE                        390420    890,072    890,072      0,002
+AVOID-DIVER-URGE                  691200    655,166    653,655      0,001
+CENTER-URGE                       390420    575,543    575,543      0,001
+SUBTRACT                         1179149    522,717    522,717      0,000
+SPACING-URGE                      390420    572,470    396,527      0,001
+WANDER-URGE                       691200    232,285    232,285      0,000
+DO.DDIVER.MOVEMENT                  1140    113,970    113,970      0,100
+PATCH-CENTER-URGE                 109730     89,168     89,168      0,001
+SET.BEHAVIOR                        5760     62,704     58,670      0,010
+REST-URGE                         267090    239,488     58,230      0,000
+FORGET.FISHES                        114      9,868      9,868      0,087
+D.COUNT.FISHES                       114      9,472      9,472      0,083
+PICK.PATCH                          1162      4,034      4,034      0,003
+DO.OUTPUTS                             1      0,000      2,476      2,476
+SET.FIRST.BEHAVIOR                   480      2,258      2,258      0,005
+ADVANCE-CLOCK                        114      0,906      0,906      0,008
+OCCURRENCES                            2      0,472      0,472      0,236
+
+Sorted by Inclusive Time
+GO                                   115  40426,531   9905,168     86,132
+DO.FISH.MOVEMENT                  691200  36810,400  23741,378      0,034
+ADD-URGE                         3621680   5321,158   1214,804      0,000
+NORMALIZE                        5163666   3099,060   1561,780      0,000
+MAGNITUDE                        8385438   2606,980   2606,980      0,000
+AVOID-PREDATOR-URGE               691200   1493,760   1493,760      0,002
+ADD                              5224939   1422,592   1422,592      0,000
+SCALE                            5163174   1350,911   1350,911      0,000
+ALIGN-URGE                        390420    890,072    890,072      0,002
+AVOID-DIVER-URGE                  691200    655,166    653,655      0,001
+CENTER-URGE                       390420    575,543    575,543      0,001
+SPACING-URGE                      390420    572,470    396,527      0,001
+SUBTRACT                         1179149    522,717    522,717      0,000
+REST-URGE                         267090    239,488     58,230      0,000
+WANDER-URGE                       691200    232,285    232,285      0,000
+DO.DDIVER.MOVEMENT                  1140    113,970    113,970      0,100
+PATCH-CENTER-URGE                 109730     89,168     89,168      0,001
+SET.BEHAVIOR                        5760     62,704     58,670      0,010
+FORGET.FISHES                        114      9,868      9,868      0,087
+D.COUNT.FISHES                       114      9,472      9,472      0,083
+PICK.PATCH                          1162      4,034      4,034      0,003
+SET.FIRST.BEHAVIOR                   480      2,258      2,258      0,005
+ADVANCE-CLOCK                        114      0,906      0,906      0,008
+OCCURRENCES                            2      0,472      0,472      0,236
+DO.OUTPUTS                             1      0,000      2,476      2,476
+
+Sorted by Number of Calls
+MAGNITUDE                        8385438   2606,980   2606,980      0,000
+ADD                              5224939   1422,592   1422,592      0,000
+NORMALIZE                        5163666   3099,060   1561,780      0,000
+SCALE                            5163174   1350,911   1350,911      0,000
+ADD-URGE                         3621680   5321,158   1214,804      0,000
+SUBTRACT                         1179149    522,717    522,717      0,000
+DO.FISH.MOVEMENT                  691200  36810,400  23741,378      0,034
+AVOID-PREDATOR-URGE               691200   1493,760   1493,760      0,002
+AVOID-DIVER-URGE                  691200    655,166    653,655      0,001
+WANDER-URGE                       691200    232,285    232,285      0,000
+ALIGN-URGE                        390420    890,072    890...
+Profiler log data saved in /log/profiler_20260507_0021.csv with selected delimiter.
+Profiler data cleared.
