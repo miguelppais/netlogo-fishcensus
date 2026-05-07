@@ -192,16 +192,15 @@ to do.fish.movement  ;; fish procedure
 
 
   ;acceleration due to drag is in the opposite direction of the velocity vector
-  let deceleration (scale ((drag.formula * ((magnitude velocity) ^ 2))) (subtract (list 0 0) (normalize velocity)))
+  let mag-v magnitude velocity
+  let deceleration scale (-1 * drag.formula * mag-v) velocity
   set acceleration (add acceleration deceleration)
 
 
   ;keep the acceleration within the accepted range
-  if magnitude acceleration > max.acceleration
-  [ set acceleration
-    (scale
-        max.acceleration
-        normalize acceleration) ]
+  let mag-acc magnitude acceleration
+  if mag-acc > max.acceleration
+  [ set acceleration (scale (max.acceleration / mag-acc) acceleration) ]
 
   ;the new velocity of the fish is sum of the acceleration and the old velocity.
   set velocity (add velocity acceleration)
@@ -209,24 +208,26 @@ to do.fish.movement  ;; fish procedure
 
   ;keep velocity within accepted range. When near threats, use burst.speed as limit, but only if avoidance urge weight is greater than 0
 
+  let new-mag-v magnitude velocity
+
   ifelse ((any? predators in-cone approach.dist perception.angle) and (predator.avoidance.w > 0)) or ((any? divers in-cone approach.dist perception.angle) and (diver.avoidance.w > 0)) [
-   if magnitude velocity > burst.speed [
-     set velocity (scale burst.speed normalize velocity)
+   if new-mag-v > burst.speed [
+     set velocity (scale (burst.speed / new-mag-v) velocity)
+     set new-mag-v burst.speed
      ]
   ] [
 
-  if magnitude velocity > max.sustained.speed
-  [ set velocity
-    (scale
-        max.sustained.speed
-        normalize velocity) ]
+  if new-mag-v > max.sustained.speed
+  [ set velocity (scale (max.sustained.speed / new-mag-v) velocity)
+    set new-mag-v max.sustained.speed
+  ]
   ]
 
   let nxcor xcor + ( first velocity )
   let nycor ycor + ( last velocity )
-  if magnitude velocity > 0.2 [                          ; minimum velocity that triggers movement. This is to prevent erratic movement when stopped.
+  if new-mag-v > 0.2 [                          ; minimum velocity that triggers movement. This is to prevent erratic movement when stopped.
     facexy nxcor nycor
-    fd (magnitude velocity) / movement.time.step]
+    fd new-mag-v / movement.time.step]
 
 end ;of do.fish.movement
 
@@ -247,75 +248,73 @@ end
 
 
 to-report center-urge  ; a vector directed at the average location of my schoolmates
-
   if count schoolmates = 0 or center.w = 0
   [ report (list 0 0) ]
-  report
-    (map -
-      (list mean [ xcor ] of schoolmates mean [ ycor ] of schoolmates)
-      (list xcor ycor)
-  )
+  report list (mean [xcor] of schoolmates - xcor) (mean [ycor] of schoolmates - ycor)
 end
 
 to-report align-urge ; a vector obtained by averaging the velocity of schoolmates
   if count schoolmates = 0 or align.w = 0
   [ report (list 0 0) ]
-  report
-    (map - (list
-      mean [ first velocity ] of schoolmates   ; x component
-     mean [ last velocity ] of schoolmates     ; y component
-     )
-  velocity
-  )
+  report list (mean [first velocity] of schoolmates - first velocity) (mean [last velocity] of schoolmates - last velocity)
 end
 
 to-report rest-urge ;a vector opposite to current velocity (counters current movement)
-  report subtract [0 0] velocity
+  report list (- first velocity) (- last velocity)
 end
 
 
 to-report cruise-urge ; a vector that simply reinforces the current velocity
-  report normalize velocity
+  report velocity
 end
 
 to-report wander-urge ; reports 2 random numbers between -1 and 1, leading to a vector with random direction
-  report n-values 2 [ (random-float 2) - 1 ]
+  report list ((random-float 2) - 1) ((random-float 2) - 1)
 end
 
 to-report spacing-urge
-  let urge [ 0 0 ]
+  let u-x 0
+  let u-y 0
+  let my-x xcor
+  let my-y ycor
   ;; report the sum of the distances to fishes
   ;; in my school that are closer to me than
   ;; schoolmate.dist (in body lengths)
   ask schoolmates with [ distance myself < (schoolmate.dist * size) ] [
-    set urge
-      add
-        urge
-        (subtract
-          (list [xcor] of myself [ycor] of myself)
-          (list xcor ycor))
+    set u-x u-x + (my-x - xcor)
+    set u-y u-y + (my-y - ycor)
   ]
-  report urge
+  report list u-x u-y
 end
 
 to-report avoid-predator-urge ; a normalized vector that is opposite to the position of the closest predator
- let urge (list 0 0)
-  if predator.avoidance.w = 0 [ report urge ]
+  let u-x 0
+  let u-y 0
+  if predator.avoidance.w = 0 [ report list 0 0 ]
   let threats predators in-cone approach.dist perception.angle
-  if any? threats [ask min-one-of threats [distance myself]
-  [set urge normalize (add urge subtract (list [xcor] of myself [ycor] of myself) (list xcor ycor))
-    ]]
-  report urge
+  if any? threats [
+    let p min-one-of threats [distance myself]
+    if p != nobody [
+      set u-x (xcor - [xcor] of p)
+      set u-y (ycor - [ycor] of p)
+    ]
+  ]
+  report list u-x u-y
 end
 
 to-report avoid-diver-urge ; a normalized vector that is opposite to the position of the closest diver
- let urge (list 0 0)
-  if diver.avoidance.w = 0 [ report urge ]
+  let u-x 0
+  let u-y 0
+  if diver.avoidance.w = 0 [ report list 0 0 ]
   let human_threats divers in-cone approach.dist perception.angle
-  if any? human_threats [ask min-one-of human_threats [distance myself]
-  [set urge normalize (add urge subtract (list [xcor] of myself [ycor] of myself) (list xcor ycor))
-    ]]
-  report urge
+  if any? human_threats [
+    let t min-one-of human_threats [distance myself]
+    if t != nobody [
+      set u-x (xcor - [xcor] of t)
+      set u-y (ycor - [ycor] of t)
+    ]
+  ]
+  report list u-x u-y
 end
 
 
@@ -334,25 +333,25 @@ end
 ; vector operations
 
 to-report add [ v1 v2 ]
-  report (map + v1 v2)
+  report list (first v1 + first v2) (last v1 + last v2)
 end
 
 to-report subtract [ v1 v2 ]
-  report (map - v1 v2)
+  report list (first v1 - first v2) (last v1 - last v2)
 end
 
 to-report scale [ scalar vector ]
-  report map [ [v] -> scalar * v ] vector
+  report list (first vector * scalar) (last vector * scalar)
 end
 
 to-report magnitude [ vector ]
-  report sqrt sum map [ [v] -> v * v ] vector
+  report sqrt ((first vector ^ 2) + (last vector ^ 2))
 end
 
 to-report normalize [ vector ]
   let m magnitude vector
   if m = 0 [ report vector ]
-  report map [ [v] -> v / m ] vector
+  report list (first vector / m) (last vector / m)
 end
 
 
@@ -741,31 +740,31 @@ off: update view every second</note>
     <button x="15" y="120" height="45" disableUntilTicks="false" forever="false" kind="Observer" width="240" display="Create new species">create-new-species</button>
     <note x="315" y="475" backgroundDark="0" fontSize="11" width="215" markdown="false" height="50" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Estimate sustained and burst speed from caudal fin aspect ratio and body length.</note>
     <slider x="260" step="0.01" y="235" max="1" width="265" display="fish.density" height="50" min="0" direction="Horizontal" default="0.3" variable="fish.density" units="fishes / m^2"></slider>
-    <slider x="15" step="0.05" y="258" max="5" width="240" display="perception.dist" height="50" min="0.05" direction="Horizontal" default="0.35" variable="perception.dist" units="meters"></slider>
+    <slider x="15" step="0.05" y="258" max="5" width="240" display="perception.dist" height="50" min="0.05" direction="Horizontal" default="0.6" variable="perception.dist" units="meters"></slider>
     <slider x="15" step="0.1" y="425" max="10" width="192" display="max.sustained.speed" height="50" min="0" direction="Horizontal" default="0.5" variable="max.sustained.speed" units="m/s"></slider>
-    <slider x="15" step="0.05" y="554" max="2" width="240" display="max.acceleration" height="50" min="0" direction="Horizontal" default="0.2" variable="max.acceleration" units="m/s^2"></slider>
+    <slider x="15" step="0.05" y="554" max="2" width="240" display="max.acceleration" height="50" min="0" direction="Horizontal" default="0.15" variable="max.acceleration" units="m/s^2"></slider>
     <slider x="20" step="0.1" y="921" max="10" width="212" display="schoolmate.dist" height="50" min="0.1" direction="Horizontal" default="1.0" variable="schoolmate.dist" units="body lenghts"></slider>
-    <slider x="20" step="1" y="866" max="50" width="210" display="spacing.w" height="50" min="0" direction="Horizontal" default="15.0" variable="spacing.w"></slider>
-    <slider x="20" step="1" y="811" max="20" width="210" display="center.w" height="50" min="0" direction="Horizontal" default="6.0" variable="center.w"></slider>
-    <slider x="20" step="1" y="756" max="20" width="210" display="align.w" height="50" min="0" direction="Horizontal" default="5.0" variable="align.w"></slider>
-    <slider x="250" step="1" y="766" max="10" width="172" display="wander.w" height="50" min="0" direction="Horizontal" default="3.0" variable="wander.w"></slider>
+    <slider x="20" step="1" y="866" max="50" width="210" display="spacing.w" height="50" min="0" direction="Horizontal" default="20.0" variable="spacing.w"></slider>
+    <slider x="20" step="1" y="811" max="20" width="210" display="center.w" height="50" min="0" direction="Horizontal" default="5.0" variable="center.w"></slider>
+    <slider x="20" step="1" y="756" max="20" width="210" display="align.w" height="50" min="0" direction="Horizontal" default="10.0" variable="align.w"></slider>
+    <slider x="250" step="1" y="766" max="10" width="172" display="wander.w" height="50" min="0" direction="Horizontal" default="8.0" variable="wander.w"></slider>
     <slider x="255" step="0.5" y="1008" max="10" width="175" display="picked.patch.dist" height="50" min="0" direction="Horizontal" default="1.0" variable="picked.patch.dist" units="meters"></slider>
-    <slider x="20" step="1" y="1003" max="100" width="170" display="predator.avoidance.w" height="50" min="-5" direction="Horizontal" default="10.0" variable="predator.avoidance.w"></slider>
+    <slider x="20" step="1" y="1003" max="100" width="170" display="predator.avoidance.w" height="50" min="-5" direction="Horizontal" default="100.0" variable="predator.avoidance.w"></slider>
     <switch x="20" y="711" height="40" on="true" variable="schooling?" width="210" display="schooling?"></switch>
     <slider x="15" step="5" y="313" max="360" width="240" display="perception.angle" height="50" min="45" direction="Horizontal" default="320.0" variable="perception.angle" units="degrees"></slider>
     <slider x="20" step="1" y="1058" max="100" width="170" display="diver.avoidance.w" height="50" min="-5" direction="Horizontal" default="10.0" variable="diver.avoidance.w"></slider>
     <slider x="255" step="1" y="1065" max="20" width="175" display="patch.gathering.w" height="50" min="0" direction="Horizontal" default="0.0" variable="patch.gathering.w"></slider>
-    <slider x="15" step="0.1" y="368" max="10" width="240" display="approach.dist" height="50" min="0.5" direction="Horizontal" default="1.0" variable="approach.dist" units="meters"></slider>
-    <input x="15" multiline="false" y="170" height="60" variable="species.name" type="string" width="240">Schooling</input>
+    <slider x="15" step="0.1" y="368" max="10" width="240" display="approach.dist" height="50" min="0.5" direction="Horizontal" default="1.5" variable="approach.dist" units="meters"></slider>
+    <input x="15" multiline="false" y="170" height="60" variable="species.name" type="string" width="240">new species</input>
     <note x="20" y="691" backgroundDark="0" fontSize="11" width="150" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Schooling parameters</note>
     <note x="20" y="983" backgroundDark="0" fontSize="11" width="150" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Avoidance urges</note>
     <note x="15" y="235" backgroundDark="0" fontSize="11" width="150" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Fixed species parameters</note>
     <note x="250" y="691" backgroundDark="0" fontSize="11" width="150" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Individual movement</note>
     <note x="250" y="988" backgroundDark="0" fontSize="11" width="150" markdown="false" height="18" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Gathering parameters</note>
-    <input x="20" multiline="false" y="1262" height="60" variable="B1.name" type="string" width="145">wandering</input>
+    <input x="20" multiline="false" y="1262" height="60" variable="B1.name" type="string" width="145">n/a</input>
     <button x="325" y="1232" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="75" display="Save as B1">save.b1</button>
-    <input x="20" multiline="false" y="1327" height="60" variable="B2.name" type="string" width="145">feeding</input>
-    <input x="20" multiline="false" y="1392" height="60" variable="B3.name" type="string" width="145">stationary</input>
+    <input x="20" multiline="false" y="1327" height="60" variable="B2.name" type="string" width="145">n/a</input>
+    <input x="20" multiline="false" y="1392" height="60" variable="B3.name" type="string" width="145">n/a</input>
     <input x="20" multiline="false" y="1457" height="60" variable="B4.name" type="string" width="145">n/a</input>
     <button x="325" y="1297" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="75" display="Save as B2">save.b2</button>
     <button x="325" y="1362" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="75" display="Save as B3">save.b3</button>
@@ -774,14 +773,14 @@ off: update view every second</note>
     <button x="405" y="1297" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="70" display="Load B2">load.b2</button>
     <button x="405" y="1362" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="70" display="Load B3">load.b3</button>
     <button x="405" y="1427" height="60" disableUntilTicks="false" forever="false" kind="Observer" width="70" display="Load B4">load.b4</button>
-    <slider x="260" step="0.01" y="290" max="1" width="265" display="fish.size" height="50" min="0.05" direction="Horizontal" default="0.2" variable="fish.size" units="meters"></slider>
+    <slider x="260" step="0.01" y="290" max="1" width="265" display="fish.size" height="50" min="0.05" direction="Horizontal" default="0.3" variable="fish.size" units="meters"></slider>
     <button x="20" y="1575" height="45" disableUntilTicks="false" forever="false" kind="Observer" width="390" display="Save species data to file">save.species.data</button>
     <button x="260" y="120" height="45" disableUntilTicks="false" forever="false" kind="Observer" width="265" display="Load species data from file">load.species.data</button>
-    <slider x="15" step="0.5" y="609" max="20" width="240" display="id.distance" height="50" min="0.5" direction="Horizontal" default="4.0" variable="id.distance" units="meters"></slider>
+    <slider x="15" step="0.5" y="609" max="20" width="240" display="id.distance" height="50" min="0.5" direction="Horizontal" default="5.0" variable="id.distance" units="meters"></slider>
     <monitor x="260" precision="0" y="170" height="60" fontSize="11" width="155" display="Nr. fishes">count fishes</monitor>
-    <slider x="170" step="0.05" y="1287" max="1" width="150" display="b1.freq" height="50" min="0" direction="Horizontal" default="0.5" variable="b1.freq"></slider>
-    <slider x="170" step="0.05" y="1364" max="1" width="150" display="b2.freq" height="50" min="0" direction="Horizontal" default="0.2" variable="b2.freq"></slider>
-    <slider x="170" step="0.05" y="1441" max="1" width="150" display="b3.freq" height="50" min="0" direction="Horizontal" default="0.3" variable="b3.freq"></slider>
+    <slider x="170" step="0.05" y="1287" max="1" width="150" display="b1.freq" height="50" min="0" direction="Horizontal" default="0.0" variable="b1.freq"></slider>
+    <slider x="170" step="0.05" y="1364" max="1" width="150" display="b2.freq" height="50" min="0" direction="Horizontal" default="0.0" variable="b2.freq"></slider>
+    <slider x="170" step="0.05" y="1441" max="1" width="150" display="b3.freq" height="50" min="0" direction="Horizontal" default="0.0" variable="b3.freq"></slider>
     <slider x="170" step="0.05" y="1518" max="1" width="150" display="b4.freq" height="50" min="0" direction="Horizontal" default="0.0" variable="b4.freq"></slider>
     <monitor x="20" precision="2" y="1197" height="60" fontSize="11" width="245" display="Sum of frequencies (must be 1)">b1.freq + b2.freq + b3.freq + b4.freq</monitor>
     <slider x="250" step="0.1" y="711" max="1" width="172" display="detectability" height="50" min="0" direction="Horizontal" default="1.0" variable="detectability"></slider>
@@ -792,7 +791,7 @@ off: update view every second</note>
     <button x="435" y="951" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="75" display="Pick patch">pick.patch</button>
     <slider x="250" step="1" y="821" max="20" width="172" display="rest.w" height="50" min="0" direction="Horizontal" default="0.0" variable="rest.w"></slider>
     <monitor x="212" precision="2" y="423" height="60" fontSize="11" width="100" display="L/s">max.sustained.speed / fish.size</monitor>
-    <slider x="15" step="0.1" y="492" max="10" width="190" display="burst.speed" height="50" min="0" direction="Horizontal" default="2.6" variable="burst.speed" units="m/s"></slider>
+    <slider x="15" step="0.1" y="492" max="10" width="190" display="burst.speed" height="50" min="0" direction="Horizontal" default="2.9" variable="burst.speed" units="m/s"></slider>
     <monitor x="210" precision="1" y="488" height="60" fontSize="11" width="100" display="L/s">burst.speed / fish.size</monitor>
     <slider x="250" step="1" y="876" max="10" width="172" display="cruise.w" height="50" min="0" direction="Horizontal" default="0.0" variable="cruise.w"></slider>
     <chooser x="425" y="170" height="60" variable="csv.delimiter" current="0" width="100" display="csv.delimiter">
