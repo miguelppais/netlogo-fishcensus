@@ -522,37 +522,38 @@ to do.fish.movement
     add-urge center-urge center.w
     add-urge align-urge align.w ]
 
-  let deceleration (scale ((drag.formula * ((magnitude velocity) ^ 2))) (subtract (list 0 0) (normalize velocity)))    ; subtract the deceleration due to drag from the acceleration vector
+  let mag-v magnitude velocity
+  let deceleration scale (-1 * drag.formula * mag-v) velocity    ; deceleration due to drag mathematically simplifies to -v * k * |v|
   set acceleration (add acceleration deceleration)
 
-  if magnitude acceleration > max.acceleration                                                   ; keep the acceleration within the accepted range. It is important that this is done after accounting for drag, so that max.acceleration can be reached.
-  [ set acceleration
-    (scale
-        max.acceleration
-        normalize acceleration) ]
+  let mag-acc magnitude acceleration
+  if mag-acc > max.acceleration                                                   ; keep the acceleration within the accepted range. It is important that this is done after accounting for drag, so that max.acceleration can be reached.
+  [ set acceleration (scale (max.acceleration / mag-acc) acceleration) ]
 
   set velocity (add velocity acceleration)                                                       ; the new velocity of the fish is sum of the acceleration and the old velocity.
 
  ;keep velocity within accepted range. When near threats, use burst.speed as limit, but only if avoidance urge weight is greater than 0
 
+  let new-mag-v magnitude velocity
+
   ifelse ((any? (fishes with [prey.type = "fish"]) in-cone approach.dist perception.angle) and (predator.avoidance.w > 0)) or ((any? divers in-cone approach.dist perception.angle) and (diver.avoidance.w > 0)) [
-   if magnitude velocity > burst.speed [
-     set velocity (scale burst.speed normalize velocity)
+   if new-mag-v > burst.speed [
+     set velocity (scale (burst.speed / new-mag-v) velocity)
+     set new-mag-v burst.speed
      ]
   ] [
 
-  if magnitude velocity > max.sustained.speed
-  [ set velocity
-    (scale
-        max.sustained.speed
-        normalize velocity) ]
+  if new-mag-v > max.sustained.speed
+  [ set velocity (scale (max.sustained.speed / new-mag-v) velocity)
+    set new-mag-v max.sustained.speed
+  ]
   ]
 
   let nxcor xcor + ( first velocity )
   let nycor ycor + ( last velocity )
-  if magnitude velocity > 0.2 [                                ; minimum velocity that triggers movement. This is to prevent erratic movement when stopped.
+  if new-mag-v > 0.2 [                                ; minimum velocity that triggers movement. This is to prevent erratic movement when stopped.
     facexy nxcor nycor
-    fd (magnitude velocity) / movement.time.step]
+    fd new-mag-v / movement.time.step]
 
 end ;of do.fish.movement
 
@@ -688,91 +689,90 @@ end
 
 
 to-report center-urge  ; a vector directed at the average location of my schoolmates
-  report
-    (map -
-      (list mean [ xcor ] of schoolmates mean [ ycor ] of schoolmates)
-      (list xcor ycor)
-  )
+  report list (mean [xcor] of schoolmates - xcor) (mean [ycor] of schoolmates - ycor)
 end
 
 to-report align-urge ; a vector obtained by averaging the velocity of schoolmates
-  report
-    (map - (list
-      mean [ first velocity ] of schoolmates   ; x component
-     mean [ last velocity ] of schoolmates     ; y component
-     )
-  velocity
-  )
+  report list (mean [first velocity] of schoolmates - first velocity) (mean [last velocity] of schoolmates - last velocity)
 end
 
 to-report rest-urge ;a vector opposite to current velocity (counters current movement)
-  report subtract [0 0] velocity
+  report list (- first velocity) (- last velocity)
 end
 
-to-report cruise-urge ; a vector that simply reinforces the current velocity
-  report normalize velocity
+to-report cruise-urge ; a vector that simply reinforces the current velocity (normalized later in add-urge)
+  report velocity
 end
 
 to-report wander-urge ; reports 2 random numbers between -1 and 1, leading to a vector with random direction
-  report n-values 2 [ (random-float 2) - 1 ]
+  report list ((random-float 2) - 1) ((random-float 2) - 1)
 end
 
 to-report spacing-urge
-  let urge [ 0 0 ]
+  let u-x 0
+  let u-y 0
+  let my-x xcor
+  let my-y ycor
   ;; report the sum of the distances to fishes
   ;; in my school that are closer to me than
   ;; schoolmate.dist (in body lengths)
   ask schoolmates with [ distance myself < (schoolmate.dist * size) ] [
-    set urge
-      add
-        urge
-        (subtract
-          (list [xcor] of myself [ycor] of myself)
-          (list xcor ycor))
+    set u-x u-x + (my-x - xcor)
+    set u-y u-y + (my-y - ycor)
   ]
-  report urge
+  report list u-x u-y
 end
 
-to-report avoid-predator-urge ; a normalized vector that is opposite to the position of the closest predator
- let urge (list 0 0)
+to-report avoid-predator-urge ; a vector that is opposite to the position of the closest predator (normalized later in add-urge)
+  let u-x 0
+  let u-y 0
   let predators fishes in-cone approach.dist perception.angle with [species != [species] of myself and prey.type = "fish"]
-  if any? predators [ask min-one-of predators [distance myself]
-  [set urge normalize (add urge subtract (list [xcor] of myself [ycor] of myself) (list xcor ycor))
-    ]]
-  report urge
+  if any? predators [
+    let p min-one-of predators [distance myself]
+    if p != nobody [
+      set u-x (xcor - [xcor] of p)
+      set u-y (ycor - [ycor] of p)
+    ]
+  ]
+  report list u-x u-y
 end
 
-to-report avoid-diver-urge ; a normalized vector that is opposite to the position of the closest person
- let urge (list 0 0)
+to-report avoid-diver-urge ; a vector that is opposite to the position of the closest person (normalized later in add-urge)
+  let u-x 0
+  let u-y 0
   let threats persons in-cone approach.dist perception.angle                        ; persons is an agenteset that includes divers and buddies
-  if any? threats [ask min-one-of threats [distance myself]
-  [set urge normalize (add urge subtract (list [xcor] of myself [ycor] of myself) (list xcor ycor))
-    ]]
-  report urge
+  if any? threats [
+    let t min-one-of threats [distance myself]
+    if t != nobody [
+      set u-x (xcor - [xcor] of t)
+      set u-y (ycor - [ycor] of t)
+    ]
+  ]
+  report list u-x u-y
 end
 
 ;VECTOR OPERATIONS
 
 to-report add [ v1 v2 ]
-  report (map + v1 v2)
+  report list (first v1 + first v2) (last v1 + last v2)
 end
 
 to-report subtract [ v1 v2 ]
-  report (map - v1 v2)
+  report list (first v1 - first v2) (last v1 - last v2)
 end
 
 to-report scale [ scalar vector ]
-  report map [ [v] -> scalar * v ] vector
+  report list (first vector * scalar) (last vector * scalar)
 end
 
 to-report magnitude [ vector ]
-  report sqrt sum map [ [v] -> v * v ] vector
+  report sqrt ((first vector ^ 2) + (last vector ^ 2))
 end
 
 to-report normalize [ vector ]
   let m magnitude vector
   if m = 0 [ report vector ]
-  report map [ [v] -> v / m ] vector
+  report list (first vector / m) (last vector / m)
 end
 
 ;DIVER PROCEDURES
