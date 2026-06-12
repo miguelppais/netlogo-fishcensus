@@ -131,12 +131,12 @@ to setup
     profiler:start
   ]
   output-print "Reading species file..."
-  ; first check if example.csv is on the root folder and, if not, create example.csv with the demo parameters
+  ; first check if example.csv is in the data/ folder and, if not, create example.csv with the demo parameters
   ifelse file.name = "example"
   [
-    carefully [set species.data (csv:from-file "example.csv" file.delimiter)]
+    carefully [set species.data (csv:from-file "../data/example.csv" file.delimiter)]
     [
-    output-print "File example.csv not found in root folder. Creating csv file using selected delimiter..."
+    output-print "File example.csv not found in data/ folder. Creating csv file using selected delimiter..."
     set species.data [
       ["Species" "shape" "size" "color" "density" "id.distance" "approach.dist" "perception.dist" "perception.angle" "prey.type"   ; example.csv headings
         "max.acceleration" "max.sustained.speed" "burst.speed" "length-surface" "drag-coefficient" "lw-a" "lw-b" "water-density"
@@ -150,13 +150,13 @@ to setup
         "stationary" 0.3 1 true 1 5 6 15 1 7 0 1 0 10 0 10 2
         "n/a" 0 0 false 0 0 0 0 0 0 0 0 0 0 0 0 0]
     ]
-    (csv:to-file "example.csv" species.data file.delimiter)
+    (csv:to-file "../data/example.csv" species.data file.delimiter)
     ]
-  ] [ ;else  
-  let full.file.name word file.name ".csv"
+  ] [ ;else
+  let full.file.name word "../data/" (word file.name ".csv")
   carefully [set species.data (csv:from-file full.file.name file.delimiter)]                             ; import csv file into a list of lists
     [                                                                                                      ; If there is an import error, display error message for missing file
-      user-message (word "File " full.file.name " not found in root folder. Create an input file using the FishCensus Species Creator or choose the example.csv for a demonstration.") stop ; ERROR MESSAGE: missing file
+      user-message (word "File " file.name ".csv not found in data/ folder. Create an input file using the FishCensus Species Creator or choose the example.csv for a demonstration.") stop ; ERROR MESSAGE: missing file
     ]
   ] ;end else
   if species.data = 0 [user-message "You need to import a dataset. Import the example.csv file or create one using the FishCensus species creator." stop] ; ERROR MESSAGE: import failed
@@ -558,7 +558,7 @@ to do.outputs
     output-print "Inclusive time: Time (s) to run a procedure, including all other procedures it may call."
     output-print "Exclusive time: Time (s) to run a procedure, excluding all other procedures it may call."
     output-print profiler:report
-    let profiler.log.file (word "/log/profiler_" get-timestamp ".csv")
+    let profiler.log.file (word "../log/profiler_" get-timestamp ".csv")
     (csv:to-file profiler.log.file profiler:data file.delimiter)  ;; save the results
     output-print (word "Profiler log data saved in " profiler.log.file " with selected delimiter.")
     profiler:reset                               ;; clear the data
