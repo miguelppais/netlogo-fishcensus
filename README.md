@@ -1,65 +1,66 @@
 # FishCensus v3.0
 
-An agent-based model (ABM) that simulates underwater visual census (UVC) surveys of fish populations. Uses a virtual ecologist approach to quantify how fish behaviour — diver avoidance, attraction, and schooling — affects the accuracy and precision of density estimates obtained by different survey methods.
+## Context
 
-Built in [NetLogo 7](https://ccl.northwestern.edu/netlogo/) following the [ODD protocol](docs/artifacts/odd/ODD_PROTOCOL.md) and [CoMSES Guides to Good Practice](https://www.comses.net/resources/guides-to-good-practice/).
+Underwater visual census (UVC) methods are used worldwide to monitor shallow marine and freshwater habitats and support management and conservation decisions. However, several sources of bias still undermine the ability of these methods to accurately estimate abundances of some species.
 
-## What it does
+## FishCensus Model
 
-- Simulates a virtual diver (or camera) surveying a fish assemblage whose true density is known, enabling direct quantification of sampling bias
-- Supports four survey methods: **fixed-distance transect**, **timed transect**, **stationary point count**, and **remote cameras** (baited with a diffusing scent attractant)
-- Fish move using a urge-based vector boids algorithm with drag-force physics; behaviours include schooling, diver avoidance/attraction, and bait scent following
-- Outputs per-replicate count, density estimate, and bias as a CSV file
+FishCensus is an agent-based model that simulates underwater visual census of fish populations. It can help estimate sampling bias, apply correction factors to field surveys, and decide on the best survey method for a particular species given its behavioural traits, detectability, or speed.
 
-A companion program, **FishCensus Species Creator**, provides a GUI for editing species parameter sets and exporting them as `.csv` files for use in the main model.
+Fish move using a urge-based vector boids algorithm with drag-force physics. Complex behaviours such as schooling, diver avoidance/attraction, and bait scent following can be represented.
 
-## How to use it
+Four survey methods are supported:
 
-1. Open `code/FishCensus.nlogox` in NetLogo 7.0.3
-2. Load a species file via the **Import Species** button (example species are included in `data/`)
-3. Select a survey method and set parameters using the interface sliders and choosers
-4. Click **Setup** then **Go** to run a simulation
-5. Results are exported to `results/`
+- **Fixed-distance transect** — diver swims a fixed length, counting fish within a belt of defined width
+- **Timed transect** — same as above but duration-based rather than distance-based
+- **Stationary point count** — diver remains stationary and counts fish within a cylinder
+- **Remote cameras** — static camera baited with a scent attractant; fish approach via a diffusing scent gradient
 
-For BehaviorSpace batch runs, open `code/FishCensus_dev.nlogox` — this is the development file that contains all experiment definitions.
+## How it works
 
-## Dependencies
+FishCensus comes with two separate programs. The **Species Creator** is used to create new fish species or observe/edit existing ones; species parameters can be exported as a CSV file and imported into the main model.
 
-| Dependency | Version | Notes |
-| --- | --- | --- |
-| NetLogo | 7.0.3 | [ccl.northwestern.edu/netlogo](https://ccl.northwestern.edu/netlogo/) |
-| `csv` extension | bundled | Imports species parameter files |
-| `rnd` extension | bundled | Weighted random behaviour selection |
-| `time` extension | bundled | Output file timestamping |
-| `profiler` extension | bundled | Debug and performance profiling |
+In the main FishCensus program, a virtual diver (or camera) surveys a fish assemblage whose true density is known, allowing the direct quantification of bias — a measure that is unknowable in real field surveys.
 
-## Project structure
+Model code and documentation are maintained at [github.com/miguelppais/netlogo-fishcensus](https://github.com/miguelppais/netlogo-fishcensus). A full ODD protocol description is available in `docs/artifacts/odd/`.
 
-```text
-.
-├── LICENSE                          # MIT
-├── CITATION.cff                     # How to cite this model
-├── code/
-│   ├── FishCensus.nlogox            # Public release model (no experiments)
-│   ├── FishCensus_dev.nlogox        # Development model (includes BehaviorSpace experiments)
-│   └── FishCensus Species Creator.nlogox
-├── data/                            # Species parameter CSV files
-├── results/                         # BehaviorSpace output CSVs and figures
-└── docs/
-    ├── artifacts/odd/               # ODD Protocol and appendices
-    └── artifacts/validation/        # Validation and sensitivity analysis reports
-```
+## Related models
 
-## Citation
+### Reefex model
+
+Watson, R.A., Carlos, G.M., & Samoilys, M.A., 1995. Bias introduced by the non-random movement of fish in visual transect surveys. Ecological Modelling 77(2–3), 205–214. <http://doi.org/10.1016/0304-3800(93)E0085-H>
+
+### AnimDens model
+
+Ward-Paige, C.A., Flemming, J.M., Lotze, H.K., 2010. Overestimating fish counts by non-instantaneous visual censuses: Consequences for population and community descriptions. PLoS One 5, e11722. <http://doi.org/10.1371/journal.pone.0011722>
+
+Pais, M.P., Ward-Paige, C.A. (2015). AnimDens NetLogo model. <http://modelingcommons.org/browse/one_model/4408>
+
+### Vector-based swarming
+
+Wilensky, U. (2005). NetLogo Flocking 3D Alternate model. <http://ccl.northwestern.edu/netlogo/models/Flocking3DAlternate>. Center for Connected Learning and Computer-Based Modeling, Northwestern University, Evanston, IL.
+
+## Credits and references
 
 If you use this model in your research, please cite:
 
-> Pais, M.P., Cabral, H.N. 2018. Fish behaviour effects on the accuracy and precision of underwater visual census surveys. A virtual ecologist approach using an individual-based model. *PeerJ*. doi:[10.7717/peerj.5378](https://doi.org/10.7717/peerj.5378)
+Pais, M.P., Cabral, H.N. 2018. Fish behaviour effects on the accuracy and precision of underwater visual census surveys. A virtual ecologist approach using an individual-based model. *PeerJ*. doi:10.7717/peerj.5378
 
 To cite the model software itself:
 
-> Pais, M.P. 2026. FishCensus (version 3.0). CoMSES Computational Model Library. doi:[10.25937/k5nn-1r14](https://doi.org/10.25937/k5nn-1r14)
+Pais, M.P. 2026. FishCensus (version 3.0). CoMSES Computational Model Library. doi:10.25937/k5nn-1r14
 
-## License
+## Acknowledgments
 
-[MIT](LICENSE) © 2016 Miguel Pessanha Pais
+I thank everyone who tested the model and interface and helped find bugs, Christine Ward-Paige for clarifications and suggestions about the AnimDens model, Uri Wilensky for NetLogo and the base code for vector-based swarming, Kenneth Rose for valuable feedback and suggestions and J.P. Rosa for revising the calculation of drag forces. This study had the support of Fundação para a Ciência e Tecnologia (FCT), through the strategic project UID/MAR/04292/2013 granted to MARE and the grant awarded to Miguel P. Pais (SFRH/BPD/94638/2013).
+
+## Contact the author
+
+To report bugs, suggest features, or share work done with the model, please open an issue at [github.com/miguelppais/netlogo-fishcensus](https://github.com/miguelppais/netlogo-fishcensus) or email [mppais@fc.ul.pt](mailto:mppais@fc.ul.pt)
+
+## COPYRIGHT AND LICENSE
+
+Copyright 2016 Miguel Pessanha Pais
+
+This model is released under the [MIT License](https://opensource.org/licenses/MIT). See the `LICENSE` file in the repository root for the full license text.
