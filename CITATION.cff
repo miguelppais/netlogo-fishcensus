@@ -1,30 +1,51 @@
 cff-version: 1.2.0
 message: "If you use this model in your research, please cite it using the metadata below."
 type: software
-title: "[MODEL TITLE]"
-abstract: "[Brief description of the model and its purpose.]"
+title: "FishCensus"
+abstract: >-
+  FishCensus is an agent-based model (ABM) that simulates fish assemblages observed during
+  underwater visual census (UVC) surveys. The model implements a virtual ecologist approach
+  to investigate how fish behaviour — including diver avoidance, attraction, and schooling —
+  affects the accuracy and precision of population estimates obtained by different survey
+  methods (transects, stationary point counts, and remote cameras). It can be used to
+  estimate sampling bias, derive correction factors for field surveys, and guide method
+  selection for species with varying behavioural traits.
 authors:
-  - family-names: "[LAST NAME]"
-    given-names: "[FIRST NAME]"
-    orcid: "https://orcid.org/[YOUR-ORCID-ID]"
-    affiliation: "[INSTITUTION]"
-version: "[MODEL VERSION, e.g. 1.0.0]"
-date-released: "[YYYY-MM-DD]"
-doi: "[DOI assigned after archiving on CoMSES or Zenodo]"
-url: "https://www.comses.net/codebases/[UUID]/releases/[VERSION]/"
-repository-code: "https://github.com/[USERNAME]/[REPO]"
+  - family-names: "Pais"
+    given-names: "Miguel Pessanha"
+    email: "mppais@fc.ul.pt"
+    orcid: "https://orcid.org/0000-0003-4282-9995"
+    affiliation: "MARE – Marine and Environmental Sciences Centre, Faculdade de Ciências, Universidade de Lisboa, Portugal"
+version: "3.0"
+date-released: "2026-06-12"
+doi: "10.25937/k5nn-1r14"
+url: "https://doi.org/10.25937/k5nn-1r14"
+repository-code: "https://github.com/miguelppais/netlogo-fishcensus"
 license: MIT
 keywords:
   - agent-based model
   - NetLogo
-  - "[DOMAIN KEYWORD]"
-  - "[DOMAIN KEYWORD]"
+  - underwater visual census
+  - fish behavior
+  - virtual ecologist
+  - marine ecology
+  - fisheries surveys
 references:
   - type: article
-    title: "[KEY REFERENCE PAPER TITLE]"
+    title: "Fish behaviour effects on the accuracy and precision of underwater visual census surveys. A virtual ecologist approach using an individual-based model."
     authors:
-      - family-names: "[LAST NAME]"
-        given-names: "[FIRST NAME]"
-    journal: "[JOURNAL NAME]"
-    year: [YYYY]
-    doi: "[DOI]"
+      - family-names: "Pais"
+        given-names: "M.P."
+      - family-names: "Cabral"
+        given-names: "H.N."
+    journal: "PeerJ"
+    doi: "10.7717/peerj.5378"
+  - type: data
+    title: "Output data from FishCensus model simulations"
+    authors:
+      - family-names: "Pais"
+        given-names: "M.P."
+      - family-names: "Cabral"
+        given-names: "H.N."
+    doi: "10.7717/peerj.5378/supp-6"
+    url: "https://doi.org/10.7717/peerj.5378/supp-6"
