@@ -1161,7 +1161,7 @@ set scent.decay.rate 0.05
 set bait.diffusion.rate 0.4
 set current.speed 0.3</button>
   </widgets>
-  <info><![CDATA[FishCensus version 2.0 by Miguel Pessanha Pais
+  <info><![CDATA[# FishCensus v3.0
 
 ## Context
 
@@ -1169,16 +1169,24 @@ Underwater visual census (UVC) methods are used worldwide to monitor shallow mar
 
 ## FishCensus Model
 
-FishCensus is an agent-based model that simulates underwater visual census of fish populations, a method used worldwide to survey shallow marine and freshwater habitats that involves a diver counting fish species to estimate their density. It can help estimate sampling bias, apply correction factors to field surveys and decide on the best method to survey a particular species, given its behavioural traits, detectability or speed.
-A modified vector-based boids-like movement submodel is used for fish, and complex behaviours such as schooling or diver avoidance / attraction can be represented.
+FishCensus is an agent-based model that simulates underwater visual census of fish populations. It can help estimate sampling bias, apply correction factors to field surveys, and decide on the best survey method for a particular species given its behavioural traits, detectability, or speed.
+
+Fish move using a urge-based vector boids algorithm with drag-force physics. Complex behaviours such as schooling, diver avoidance/attraction, and bait scent following can be represented.
+
+Four survey methods are supported:
+
+- **Fixed-distance transect** — diver swims a fixed length, counting fish within a belt of defined width
+- **Timed transect** — same as above but duration-based rather than distance-based
+- **Stationary point count** — diver remains stationary and counts fish within a cylinder
+- **Remote cameras** — static camera baited with a scent attractant; fish approach via a diffusing scent gradient
 
 ## How it works
 
-The FishCensus model comes with two separate programs. The Species Creator is used to create new fish species or observe/edit existing ones. Species parameters can be exported as a .csv file and imported into the main model where the simulation happens.
+FishCensus comes with two separate programs. The **Species Creator** is used to create new fish species or observe/edit existing ones; species parameters can be exported as a CSV file and imported into the main model.
 
-In the main FishCensus program, a virtual diver uses a pre-selected survey method (*e.g.* fixed distance or timed transect, stationary point counts) to count the fish and estimate their density. The true density of fish is pre-determined and known, which allows for the quantification of bias, a measure that is unknown in the field, where determining the true abundance is very difficult.
+In the main FishCensus program, a virtual diver (or camera) surveys a fish assemblage whose true density is known, allowing the direct quantification of bias — a measure that is unknowable in real field surveys.
 
-For more information and tutorials visit the [wiki at Bitbucket](https://bitbucket.org/MiguelPPais/fishcensus/wiki/Home) and the [openABM](https://www.openabm.org/model/530) page.
+Model code and documentation are maintained at [github.com/miguelppais/netlogo-fishcensus](https://github.com/miguelppais/netlogo-fishcensus). A full ODD protocol description is available in `docs/artifacts/odd/`.
 
 ## Related models
 
@@ -1186,65 +1194,39 @@ For more information and tutorials visit the [wiki at Bitbucket](https://bitbuck
 
 Watson, R.A., Carlos, G.M., & Samoilys, M.A., 1995. Bias introduced by the non-random movement of fish in visual transect surveys. Ecological Modelling 77(2–3), 205–214. http://doi.org/10.1016/0304-3800(93)E0085-H
 
-###  AnimDens model
-
-#### Origial publication of the model and R code
+### AnimDens model
 
 Ward-Paige, C.A., Flemming, J.M., Lotze, H.K., 2010. Overestimating fish counts by non-instantaneous visual censuses: Consequences for population and community descriptions. PLoS One 5, e11722. http://doi.org/10.1371/journal.pone.0011722
 
-#### Replication of the AnimDens model in NetLogo with some added features:
-
 Pais, M.P., Ward-Paige, C.A. (2015). AnimDens NetLogo model. http://modelingcommons.org/browse/one_model/4408
 
-### Vector-based swarming by Uri Wilensky, in the NetLogo 3D library:
+### Vector-based swarming
 
-Wilensky, U. (2005).  NetLogo Flocking 3D Alternate model.  http://ccl.northwestern.edu/netlogo/models/Flocking3DAlternate.  Center for Connected Learning and Computer-Based Modeling, Northwestern University, Evanston, IL.
+Wilensky, U. (2005). NetLogo Flocking 3D Alternate model. http://ccl.northwestern.edu/netlogo/models/Flocking3DAlternate. Center for Connected Learning and Computer-Based Modeling, Northwestern University, Evanston, IL.
 
 ## Credits and references
 
-If you use this model, please cite the original publication:
+If you use this model in your research, please cite:
 
-Pais, M.P., Cabral, H.N. 2017. Fish behaviour effects on the accuracy and precision of underwater visual census surveys. A virtual ecologist approach using an individual-based model. Ecological Modelling 346, 58-69. Available [here](http://dx.doi.org/10.1016/j.ecolmodel.2016.12.011).
+Pais, M.P., Cabral, H.N. 2018. Fish behaviour effects on the accuracy and precision of underwater visual census surveys. A virtual ecologist approach using an individual-based model. *PeerJ*. doi:10.7717/peerj.5378
 
-To cite the model itself, please visit the [OpenABM page](https://www.openabm.org/model/5305) for citation instructions.
+To cite the model software itself:
 
+Pais, M.P. 2026. FishCensus (version 3.0). CoMSES Computational Model Library. doi:10.25937/k5nn-1r14
 
 ## Acknowledgments
 
-I thank everyone who tested the model and interface and helped find bugs, Christine Ward-Paige for clarifications and suggestions about the AnimDens model, Uri Wilenksy for NetLogo and the base code for vector-based swarming, Kenneth Rose for valuable feedback and suggestions and J.P. Rosa for revising the calculation of drag forces. This study had the support of Fundação para a Ciência e Tecnologia (FCT), through the strategic project UID/MAR/04292/2013 granted to MARE and the grant awarded to Miguel P. Pais (SFRH/BPD/94638/2013).
+I thank everyone who tested the model and interface and helped find bugs, Christine Ward-Paige for clarifications and suggestions about the AnimDens model, Uri Wilensky for NetLogo and the base code for vector-based swarming, Kenneth Rose for valuable feedback and suggestions and J.P. Rosa for revising the calculation of drag forces. This study had the support of Fundação para a Ciência e Tecnologia (FCT), through the strategic project UID/MAR/04292/2013 granted to MARE and the grant awarded to Miguel P. Pais (SFRH/BPD/94638/2013).
 
 ## Contact the author
 
-If you want to report bugs, suggest features, share work you did with the model, or even insult me, please send me an email: [mppais@fc.ul.pt](mailto:mppais@fc.ul.pt)
+To report bugs, suggest features, or share work done with the model, please open an issue at [github.com/miguelppais/netlogo-fishcensus](https://github.com/miguelppais/netlogo-fishcensus) or email [mppais@fc.ul.pt](mailto:mppais@fc.ul.pt)
 
 ## COPYRIGHT AND LICENSE
 
 Copyright 2016 Miguel Pessanha Pais
 
-This model is released under the [MIT License](https://opensource.org/licenses/MIT). See the `LICENSE` file in the repository root for the full license text.
-
-### Disclaimer
-
-THIS MODEL IS PROVIDED "AS IS" AND ANY EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR (MIGUEL PAIS), THE MARINE AND ENVIRONMENTAL SCIENCES CENTRE (MARE), THE UNIVERSITY OF LISBON, OR ANY OF THEIR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS MODEL, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-Without limiting the foregoing, the author of the model makes no warranty that:
-
-1. the model will meet your requirements.
-2. the model will be uninterrupted, timely, secure or error-free.
-3. the results that may be obtained from the use of the model will be effective, accurate or reliable.
-4. the quality of the model will meet your expectations.
-5. any errors in the model obtained from the OpenABM web site will be corrected.
-
-The model and its documentation made available on the OpenABM web site:
-
-1. could include technical or other mistakes, inaccuracies or typographical errors.
-2. model contributors may make changes to the software or documentation made available on the web site.
-3. may be out of date and the model contributors or MARE make no commitment to update such materials.
-4. The author, contributors, and MARE assume no responsibility for errors or ommissions in the model or documentation available from the OpenABM web site.
-
-In no event shall the author, model contributors or MARE be liable to you or any third parties for any special, punitive, incidental, indirect or consequential damages of any kind, or any damages whatsoever, including, without limitation, those resulting from loss of use, data or profits, whether or not the author, model contributors, or MARE have been advised of the possibility of such damages, and on any theory of liability, arising out of or in connection with the use of this model.
-
-The use of the model downloaded through the OpenABM site is done at your own discretion and risk and with agreement that you will be solely responsible for any damage to your computer system or loss of data that results from such activities. No advice or information, whether oral or written, obtained by you from OpenABM, the author, model contributors, or MARE shall create any warranty for the model.]]></info>
+This model is released under the [MIT License](https://opensource.org/licenses/MIT). See the `LICENSE` file in the repository root for the full license text.]]></info>
   <turtleShapes>
     <shape name="default" rotatable="true" editableColorIndex="0">
       <polygon color="-1920102913" filled="true" marked="true">

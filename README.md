@@ -1,4 +1,4 @@
-# FishCensus
+# FishCensus v3.0
 
 An agent-based model (ABM) that simulates underwater visual census (UVC) surveys of fish populations. Uses a virtual ecologist approach to quantify how fish behaviour — diver avoidance, attraction, and schooling — affects the accuracy and precision of density estimates obtained by different survey methods.
 
@@ -6,10 +6,10 @@ Built in [NetLogo 7](https://ccl.northwestern.edu/netlogo/) following the [ODD p
 
 ## What it does
 
-- Simulates a virtual diver conducting a UVC survey over a fish assemblage with known true density
-- Supports three survey methods: **fixed-distance transect**, **timed transect**, and **stationary point count**, with an experimental **remote camera** method
-- Fish move using a urge-based boids algorithm with drag-force physics; behaviours include schooling, diver avoidance/attraction, and bait scent following
-- Outputs a CSV with per-replicate count, density estimate, and bias relative to the true density
+- Simulates a virtual diver (or camera) surveying a fish assemblage whose true density is known, enabling direct quantification of sampling bias
+- Supports four survey methods: **fixed-distance transect**, **timed transect**, **stationary point count**, and **remote cameras** (baited with a diffusing scent attractant)
+- Fish move using a urge-based vector boids algorithm with drag-force physics; behaviours include schooling, diver avoidance/attraction, and bait scent following
+- Outputs per-replicate count, density estimate, and bias as a CSV file
 
 A companion program, **FishCensus Species Creator**, provides a GUI for editing species parameter sets and exporting them as `.csv` files for use in the main model.
 
@@ -19,7 +19,7 @@ A companion program, **FishCensus Species Creator**, provides a GUI for editing 
 2. Load a species file via the **Import Species** button (example species are included in `data/`)
 3. Select a survey method and set parameters using the interface sliders and choosers
 4. Click **Setup** then **Go** to run a simulation
-5. Results are printed to the output area and exported to `results/`
+5. Results are exported to `results/`
 
 For BehaviorSpace batch runs, open `code/FishCensus_dev.nlogox` — this is the development file that contains all experiment definitions.
 
@@ -52,7 +52,7 @@ For BehaviorSpace batch runs, open `code/FishCensus_dev.nlogox` — this is the 
 
 ## Citation
 
-If you use this model, please cite:
+If you use this model in your research, please cite:
 
 > Pais, M.P., Cabral, H.N. 2018. Fish behaviour effects on the accuracy and precision of underwater visual census surveys. A virtual ecologist approach using an individual-based model. *PeerJ*. doi:[10.7717/peerj.5378](https://doi.org/10.7717/peerj.5378)
 
